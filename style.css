@@ -964,6 +964,148 @@
     margin-top: 2px;
 }
 
+/* ========== 排序按钮与下拉菜单 ========== */
+.cfm-sort-wrapper {
+    position: relative;
+    display: inline-block;
+}
+.cfm-sort-trigger {
+    background: none !important;
+    border: none !important;
+    color: var(--SmartThemeBodyColor, #cdd6f4) !important;
+    cursor: pointer !important;
+    font-size: 12px !important;
+    padding: 2px 5px !important;
+    border-radius: 3px !important;
+    opacity: 0.6 !important;
+    transition: opacity 0.15s, background-color 0.15s !important;
+}
+.cfm-sort-trigger:hover {
+    opacity: 1 !important;
+    background-color: rgba(255, 255, 255, 0.1) !important;
+}
+.cfm-sort-trigger.cfm-sort-active {
+    opacity: 1 !important;
+    color: #89b4fa !important;
+}
+.cfm-sort-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background-color: var(--SmartThemeBlurTintColor, #1e1e2e);
+    border: 1px solid var(--SmartThemeBorderColor, #45475a);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    z-index: 200;
+    min-width: 130px;
+    padding: 4px 0;
+    display: none;
+}
+.cfm-sort-dropdown.cfm-sort-open {
+    display: block;
+}
+.cfm-sort-dropdown-item {
+    padding: 7px 14px;
+    cursor: pointer;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--SmartThemeBodyColor, #cdd6f4);
+    transition: background-color 0.1s;
+    white-space: nowrap;
+    user-select: none;
+}
+.cfm-sort-dropdown-item:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+.cfm-sort-dropdown-item.cfm-sort-item-active {
+    color: #89b4fa;
+    background-color: rgba(137, 180, 250, 0.12);
+}
+.cfm-sort-dropdown-item.cfm-sort-item-disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+.cfm-sort-dropdown-item.cfm-sort-item-disabled:hover {
+    background-color: transparent;
+}
+.cfm-sort-dropdown-item i {
+    width: 16px;
+    text-align: center;
+    font-size: 13px;
+}
+.cfm-sort-dropdown-sep {
+    height: 1px;
+    background-color: var(--SmartThemeBorderColor, rgba(255,255,255,0.1));
+    margin: 4px 8px;
+}
+/* 右栏排序按钮 */
+.cfm-right-header .cfm-sort-wrapper {
+    flex-shrink: 0;
+}
+
+/* 排序确认弹窗 */
+#cfm-sort-confirm-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 10003;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+#cfm-sort-confirm-dialog {
+    background-color: var(--SmartThemeBlurTintColor, #1e1e2e);
+    color: var(--SmartThemeBodyColor, #cdd6f4);
+    border: 1px solid var(--SmartThemeBorderColor, #45475a);
+    border-radius: 10px;
+    padding: 20px 24px;
+    max-width: 400px;
+    width: 90vw;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    text-align: center;
+}
+#cfm-sort-confirm-dialog h4 {
+    margin: 0 0 12px 0;
+    font-size: 15px;
+}
+#cfm-sort-confirm-dialog p {
+    margin: 0 0 18px 0;
+    font-size: 13px;
+    opacity: 0.7;
+    line-height: 1.6;
+}
+#cfm-sort-confirm-dialog .cfm-sort-confirm-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+#cfm-sort-confirm-dialog .cfm-sort-confirm-actions button {
+    padding: 7px 20px;
+    border-radius: 6px;
+    border: 1px solid var(--SmartThemeBorderColor, #45475a);
+    cursor: pointer;
+    font-size: 13px;
+    transition: background-color 0.15s;
+}
+#cfm-sort-confirm-dialog .cfm-sort-confirm-yes {
+    background-color: rgba(87, 242, 135, 0.2);
+    color: #57f287;
+    border-color: rgba(87, 242, 135, 0.4);
+}
+#cfm-sort-confirm-dialog .cfm-sort-confirm-yes:hover {
+    background-color: rgba(87, 242, 135, 0.35);
+}
+#cfm-sort-confirm-dialog .cfm-sort-confirm-no {
+    background-color: rgba(237, 66, 69, 0.15);
+    color: #ed4245;
+    border-color: rgba(237, 66, 69, 0.3);
+}
+#cfm-sort-confirm-dialog .cfm-sort-confirm-no:hover {
+    background-color: rgba(237, 66, 69, 0.3);
+}
+
 /* ========== 移动端适配 ========== */
 @media (max-width: 600px) {
     .cfm-dual-pane {

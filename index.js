@@ -266,13 +266,160 @@ jQuery(async () => {
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;");
     }
-    // 排序：优先 sortOrder，其次按名称
+    // 排序：优先 sortOrder，其次按名称（使用中文拼音排序）
     function sortFolders(folderIds) {
         return [...folderIds].sort((a, b) => {
             const orderA = config.folders[a]?.sortOrder ?? 0;
             const orderB = config.folders[b]?.sortOrder ?? 0;
             if (orderA !== orderB) return orderA - orderB;
-            return getTagName(a).localeCompare(getTagName(b));
+            return getTagName(a).localeCompare(getTagName(b), 'zh-CN');
+        });
+    }
+
+    // 角色排序辅助函数
+    function sortCharacters(chars, mode) {
+        return [...chars].sort((a, b) => {
+            const cmp = (a.name || '').localeCompare(b.name || '', 'zh-CN');
+            return mode === 'az' ? cmp : -cmp;
+        });
+    }
+
+    // ==================== 排序功能 ====================
+    // 拍摄排序快照（仅首次拍摄）
+    function takeSortSnapshot() {
+        if (sortSnapshot) return;
+        sortSnapshot = {};
+        for (const id of getFolderTagIds()) {
+            sortSnapshot[id] = config.folders[id]?.sortOrder ?? 0;
+        }
+    }
+
+    // 对指定文件夹列表按名称排序并重新赋值 sortOrder
+    function applySortToFolders(folderIds, mode) {
+        takeSortSnapshot();
+        const sorted = [...folderIds].sort((a, b) => {
+            const nameA = getTagName(a);
+            const nameB = getTagName(b);
+            const cmp = nameA.localeCompare(nameB, 'zh-CN');
+            return mode === 'az' ? cmp : -cmp;
+        });
+        sorted.forEach((id, i) => {
+            config.folders[id].sortOrder = i + 1;
+        });
+        saveConfig(config);
+        sortDirty = true;
+    }
+
+    // 从快照恢复排序
+    function revertSort() {
+        if (!sortSnapshot) return;
+        for (const id of Object.keys(sortSnapshot)) {
+            if (config.folders[id]) {
+                config.folders[id].sortOrder = sortSnapshot[id];
+            }
+        }
+        saveConfig(config);
+        sortSnapshot = null;
+        sortDirty = false;
+        rightCharSortMode = null;
+    }
+
+    // 创建排序下拉菜单
+    function createSortDropdown(targetFolderIds, onSort, currentMode) {
+        const dropdown = $(`
+            <div class="cfm-sort-dropdown cfm-sort-open">
+                <div class="cfm-sort-dropdown-item ${currentMode === 'az' ? 'cfm-sort-item-active' : ''}" data-sort="az">
+                    <i class="fa-solid fa-arrow-down-a-z"></i> A → Z
+                </div>
+                <div class="cfm-sort-dropdown-item ${currentMode === 'za' ? 'cfm-sort-item-active' : ''}" data-sort="za">
+                    <i class="fa-solid fa-arrow-up-z-a"></i> Z → A
+                </div>
+                <div class="cfm-sort-dropdown-sep"></div>
+                <div class="cfm-sort-dropdown-item ${!sortSnapshot ? 'cfm-sort-item-disabled' : ''}" data-sort="revert">
+                    <i class="fa-solid fa-rotate-left"></i> 自定义
+                </div>
+            </div>
+        `);
+
+        dropdown.find('[data-sort="az"]').on('click touchend', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onSort('az');
+            dropdown.remove();
+        });
+        dropdown.find('[data-sort="za"]').on('click touchend', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onSort('za');
+            dropdown.remove();
+        });
+        dropdown.find('[data-sort="revert"]').on('click touchend', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!sortSnapshot) return; // disabled
+            onSort('revert');
+            dropdown.remove();
+        });
+
+        return dropdown;
+    }
+
+    // 显示/隐藏排序下拉菜单
+    function toggleSortDropdown(wrapper, targetFolderIds, onSort, currentMode) {
+        // 关闭所有已打开的下拉菜单
+        $('.cfm-sort-dropdown').remove();
+
+        const existing = wrapper.find('.cfm-sort-dropdown');
+        if (existing.length) {
+            existing.remove();
+            return;
+        }
+
+        const dropdown = createSortDropdown(targetFolderIds, onSort, currentMode);
+        wrapper.append(dropdown);
+
+        // 点击外部关闭
+        setTimeout(() => {
+            $(document).one('click.cfmSortDropdown', (e) => {
+                if (!$(e.target).closest('.cfm-sort-dropdown').length) {
+                    dropdown.remove();
+                }
+            });
+        }, 0);
+    }
+
+    // 显示排序确认弹窗
+    function showSortConfirmDialog(onConfirm, onRevert) {
+        const overlay = $('<div id="cfm-sort-confirm-overlay"></div>');
+        const dialog = $(`
+            <div id="cfm-sort-confirm-dialog">
+                <h4>📋 排序已改变</h4>
+                <p>文件夹的排序已被修改，是否保存新的排序？</p>
+                <div class="cfm-sort-confirm-actions">
+                    <button class="cfm-sort-confirm-no">否，撤回排序</button>
+                    <button class="cfm-sort-confirm-yes">是，保留排序</button>
+                </div>
+            </div>
+        `);
+        overlay.append(dialog);
+        $('body').append(overlay);
+
+        dialog.find('.cfm-sort-confirm-yes').on('click touchend', (e) => {
+            e.preventDefault();
+            overlay.remove();
+            onConfirm();
+        });
+        dialog.find('.cfm-sort-confirm-no').on('click touchend', (e) => {
+            e.preventDefault();
+            overlay.remove();
+            onRevert();
+        });
+        overlay.on('click', (e) => {
+            if (e.target === overlay[0]) {
+                // 点击遮罩等同于"否"
+                overlay.remove();
+                onRevert();
+            }
         });
     }
     // 移动文件夹到新父级并插入到指定位置
@@ -536,6 +683,11 @@ jQuery(async () => {
     let selectedTreeNode = null; // 当前左侧选中的文件夹ID或'__uncategorized__'
     let expandedNodes = new Set(); // 左侧树展开状态
 
+    // ==================== 排序状态管理 ====================
+    let sortDirty = false; // 是否有未确认的排序操作
+    let sortSnapshot = null; // 排序前的快照 { folderId: sortOrder, ... }
+    let rightCharSortMode = null; // 右栏角色排序模式: null | 'az' | 'za'
+
     function showMainPopup() {
         if ($("#cfm-overlay").length > 0) return;
         // 每次打开主弹窗时检测新标签
@@ -560,6 +712,9 @@ jQuery(async () => {
                         <div class="cfm-left-header">
                             <span>文件夹</span>
                             <span class="cfm-left-header-actions">
+                                <div class="cfm-sort-wrapper" id="cfm-left-sort-wrapper">
+                                    <button class="cfm-sort-trigger" id="cfm-left-sort-btn" title="排序"><i class="fa-solid fa-arrow-down-short-wide"></i></button>
+                                </div>
                                 <button id="cfm-expand-all" title="展开全部"><i class="fa-solid fa-angles-down"></i></button>
                                 <button id="cfm-collapse-all" title="收起全部"><i class="fa-solid fa-angles-up"></i></button>
                             </span>
@@ -570,6 +725,9 @@ jQuery(async () => {
                         <div class="cfm-right-header">
                             <span class="cfm-rh-path" id="cfm-rh-path">选择左侧文件夹查看内容</span>
                             <span class="cfm-rh-count" id="cfm-rh-count"></span>
+                            <div class="cfm-sort-wrapper" id="cfm-right-sort-wrapper">
+                                <button class="cfm-sort-trigger" id="cfm-right-sort-btn" title="角色排序"><i class="fa-solid fa-arrow-down-short-wide"></i></button>
+                            </div>
                         </div>
                         <div class="cfm-right-list" id="cfm-right-list">
                             <div class="cfm-right-empty">← 点击左侧文件夹查看内容</div>
@@ -607,6 +765,122 @@ jQuery(async () => {
             renderRightPane();
         });
 
+        // 右栏排序按钮
+        popup.find("#cfm-right-sort-btn").on("click touchend", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const wrapper = $("#cfm-right-sort-wrapper");
+            // 右栏排序：对当前选中文件夹的子文件夹排序 + 角色名排序
+            const currentFolder = selectedTreeNode;
+            const childFolders = (currentFolder && currentFolder !== '__uncategorized__' && currentFolder !== '__favorites__')
+                ? getChildFolders(currentFolder) : [];
+
+            // 创建自定义下拉菜单（角色排序 + 子文件夹排序）
+            $('.cfm-sort-dropdown').remove();
+            const dropdown = $(`
+                <div class="cfm-sort-dropdown cfm-sort-open">
+                    <div class="cfm-sort-dropdown-item ${rightCharSortMode === 'az' ? 'cfm-sort-item-active' : ''}" data-sort="char-az">
+                        <i class="fa-solid fa-arrow-down-a-z"></i> 角色 A → Z
+                    </div>
+                    <div class="cfm-sort-dropdown-item ${rightCharSortMode === 'za' ? 'cfm-sort-item-active' : ''}" data-sort="char-za">
+                        <i class="fa-solid fa-arrow-up-z-a"></i> 角色 Z → A
+                    </div>
+                    ${childFolders.length > 0 ? `
+                    <div class="cfm-sort-dropdown-sep"></div>
+                    <div class="cfm-sort-dropdown-item" data-sort="folder-az">
+                        <i class="fa-solid fa-folder"></i> 子文件夹 A → Z
+                    </div>
+                    <div class="cfm-sort-dropdown-item" data-sort="folder-za">
+                        <i class="fa-solid fa-folder"></i> 子文件夹 Z → A
+                    </div>` : ''}
+                    <div class="cfm-sort-dropdown-sep"></div>
+                    <div class="cfm-sort-dropdown-item ${rightCharSortMode === null && !sortSnapshot ? 'cfm-sort-item-disabled' : ''}" data-sort="revert">
+                        <i class="fa-solid fa-rotate-left"></i> 恢复默认
+                    </div>
+                </div>
+            `);
+
+            dropdown.find('[data-sort="char-az"]').on('click touchend', (ev) => {
+                ev.preventDefault(); ev.stopPropagation();
+                rightCharSortMode = 'az';
+                updateSortButtonState();
+                renderRightPane();
+                dropdown.remove();
+            });
+            dropdown.find('[data-sort="char-za"]').on('click touchend', (ev) => {
+                ev.preventDefault(); ev.stopPropagation();
+                rightCharSortMode = 'za';
+                updateSortButtonState();
+                renderRightPane();
+                dropdown.remove();
+            });
+            dropdown.find('[data-sort="folder-az"]').on('click touchend', (ev) => {
+                ev.preventDefault(); ev.stopPropagation();
+                if (childFolders.length > 0) {
+                    applySortToFolders(childFolders, 'az');
+                    toastr.info("子文件夹已按 A→Z 排序", "", { timeOut: 1500 });
+                    updateSortButtonState();
+                    renderLeftTree();
+                    renderRightPane();
+                }
+                dropdown.remove();
+            });
+            dropdown.find('[data-sort="folder-za"]').on('click touchend', (ev) => {
+                ev.preventDefault(); ev.stopPropagation();
+                if (childFolders.length > 0) {
+                    applySortToFolders(childFolders, 'za');
+                    toastr.info("子文件夹已按 Z→A 排序", "", { timeOut: 1500 });
+                    updateSortButtonState();
+                    renderLeftTree();
+                    renderRightPane();
+                }
+                dropdown.remove();
+            });
+            dropdown.find('[data-sort="revert"]').on('click touchend', (ev) => {
+                ev.preventDefault(); ev.stopPropagation();
+                if (rightCharSortMode === null && !sortSnapshot) return;
+                rightCharSortMode = null;
+                if (sortSnapshot) {
+                    revertSort();
+                    toastr.info("已恢复自定义排序", "", { timeOut: 1500 });
+                }
+                updateSortButtonState();
+                renderLeftTree();
+                renderRightPane();
+                dropdown.remove();
+            });
+
+            wrapper.append(dropdown);
+            setTimeout(() => {
+                $(document).one('click.cfmSortDropdown', (ev) => {
+                    if (!$(ev.target).closest('.cfm-sort-dropdown').length) {
+                        dropdown.remove();
+                    }
+                });
+            }, 0);
+        });
+
+        // 左栏排序按钮
+        popup.find("#cfm-left-sort-btn").on("click touchend", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const wrapper = $("#cfm-left-sort-wrapper");
+            const topFolders = getTopLevelFolders();
+            toggleSortDropdown(wrapper, topFolders, (mode) => {
+                if (mode === 'revert') {
+                    revertSort();
+                    toastr.info("已恢复自定义排序", "", { timeOut: 1500 });
+                } else {
+                    applySortToFolders(topFolders, mode);
+                    toastr.info(mode === 'az' ? "顶级文件夹已按 A→Z 排序" : "顶级文件夹已按 Z→A 排序", "", { timeOut: 1500 });
+                }
+                // 更新排序按钮状态
+                updateSortButtonState();
+                renderLeftTree();
+                renderRightPane();
+            }, null);
+        });
+
         popup.find("#cfm-btn-copymode").on("click touchend", (e) => {
             e.preventDefault();
             cfmCopyMode = !cfmCopyMode;
@@ -617,12 +891,44 @@ jQuery(async () => {
             toastr.info(cfmCopyMode ? "已切换为复制模式" : "已切换为移动模式", "", { timeOut: 1500 });
         });
 
+        // 重置排序状态
+        sortDirty = false;
+        sortSnapshot = null;
+        rightCharSortMode = null;
+
         renderLeftTree();
     }
 
+    // 更新排序按钮的激活状态
+    function updateSortButtonState() {
+        const leftBtn = $("#cfm-left-sort-btn");
+        leftBtn.toggleClass("cfm-sort-active", sortDirty);
+        const rightBtn = $("#cfm-right-sort-btn");
+        rightBtn.toggleClass("cfm-sort-active", sortDirty || rightCharSortMode !== null);
+    }
+
     function closeMainPopup() {
+        if (sortDirty) {
+            // 排序已更改，弹出确认框
+            showSortConfirmDialog(
+                () => {
+                    // 用户选择"是，保留排序" → 清理状态并关闭
+                    sortSnapshot = null;
+                    sortDirty = false;
+                    rightCharSortMode = null;
+                    $("#cfm-overlay").remove();
+                    clearNewlyImportedHighlight();
+                },
+                () => {
+                    // 用户选择"否，撤回排序" → 恢复快照并关闭
+                    revertSort();
+                    $("#cfm-overlay").remove();
+                    clearNewlyImportedHighlight();
+                }
+            );
+            return;
+        }
         $("#cfm-overlay").remove();
-        // 关闭弹窗时清除新标签高亮，下次打开不再显示
         clearNewlyImportedHighlight();
     }
 
@@ -918,7 +1224,10 @@ jQuery(async () => {
 
         if (selectedTreeNode === "__uncategorized__") {
             pathEl.text("未归类角色");
-            const chars = getUncategorizedCharacters();
+            let chars = getUncategorizedCharacters();
+            if (rightCharSortMode) {
+                chars = sortCharacters(chars, rightCharSortMode);
+            }
             countEl.text(`${chars.length} 个角色`);
             if (chars.length === 0) {
                 list.html(
@@ -932,7 +1241,10 @@ jQuery(async () => {
 
         if (selectedTreeNode === "__favorites__") {
             pathEl.text("⭐ 收藏");
-            const chars = getFavoriteCharacters();
+            let chars = getFavoriteCharacters();
+            if (rightCharSortMode) {
+                chars = sortCharacters(chars, rightCharSortMode);
+            }
             countEl.text(`${chars.length} 个角色`);
             if (chars.length === 0) {
                 list.html(
@@ -952,7 +1264,10 @@ jQuery(async () => {
         pathEl.text(path);
 
         const childFolders = sortFolders(getChildFolders(folderId));
-        const chars = getCharactersInFolder(folderId);
+        let chars = getCharactersInFolder(folderId);
+        if (rightCharSortMode) {
+            chars = sortCharacters(chars, rightCharSortMode);
+        }
         const totalItems = childFolders.length + chars.length;
         countEl.text(`${totalItems} 项`);
 
