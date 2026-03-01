@@ -132,6 +132,28 @@
     letter-spacing: 0.5px;
     flex-shrink: 0;
     border-bottom: 1px solid var(--SmartThemeBorderColor, #45475a);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.cfm-left-header-actions {
+    display: flex;
+    gap: 2px;
+}
+.cfm-left-header-actions button {
+    background: none;
+    border: none;
+    color: var(--SmartThemeBodyColor, #cdd6f4);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    opacity: 0.6;
+    transition: opacity 0.15s, background-color 0.15s;
+}
+.cfm-left-header-actions button:hover {
+    opacity: 1;
+    background-color: rgba(255, 255, 255, 0.1);
 }
 .cfm-left-tree {
     flex: 1;
@@ -215,6 +237,15 @@
 .cfm-tnode.cfm-drop-forbidden {
     background-color: rgba(243, 139, 168, 0.15) !important;
     border-left-color: #f38ba8 !important;
+}
+/* 三区域拖放指示线 */
+.cfm-tnode.cfm-drop-before {
+    box-shadow: inset 0 2px 0 0 #89b4fa !important;
+    background-color: rgba(137, 180, 250, 0.08) !important;
+}
+.cfm-tnode.cfm-drop-after {
+    box-shadow: inset 0 -2px 0 0 #89b4fa !important;
+    background-color: rgba(137, 180, 250, 0.08) !important;
 }
 
 /* ========== 右侧面板：内容列表 ========== */
@@ -315,8 +346,26 @@
     background-color: rgba(137, 180, 250, 0.2) !important;
     outline: 1px dashed #89b4fa;
 }
+.cfm-row.cfm-drop-before {
+    box-shadow: inset 0 2px 0 0 #89b4fa !important;
+    background-color: rgba(137, 180, 250, 0.08) !important;
+}
+.cfm-row.cfm-drop-after {
+    box-shadow: inset 0 -2px 0 0 #89b4fa !important;
+    background-color: rgba(137, 180, 250, 0.08) !important;
+}
+.cfm-row.cfm-drop-forbidden {
+    background-color: rgba(243, 139, 168, 0.1) !important;
+    outline: 1px dashed #f38ba8;
+}
 .cfm-row.cfm-dragging {
     opacity: 0.4;
+}
+/* 右侧列表整体拖放高亮 */
+.cfm-right-list.cfm-right-list-drop-target {
+    background-color: rgba(137, 180, 250, 0.08) !important;
+    outline: 2px dashed rgba(137, 180, 250, 0.3);
+    outline-offset: -2px;
 }
 
 /* 右侧空状态 */
@@ -856,6 +905,63 @@
 .cfm-nbc-sep {
     opacity: 0.4;
     user-select: none;
+}
+
+/* ========== 收藏星标按钮 ========== */
+.cfm-row-star {
+    flex-shrink: 0;
+    margin-left: 8px;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+    transition: color 0.15s, transform 0.15s;
+    padding: 2px 4px;
+}
+.cfm-row-star:hover {
+    color: #f9e2af;
+    transform: scale(1.2);
+}
+.cfm-row-star.cfm-star-active {
+    color: #f9e2af;
+}
+.cfm-row-star.cfm-star-active:hover {
+    color: #fab387;
+}
+
+/* ========== 收藏视图中的文件夹路径 ========== */
+.cfm-row-folder-path {
+    font-size: 11px;
+    opacity: 0.4;
+    margin-top: 1px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cfm-row-char .cfm-row-name {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+}
+
+/* ========== 复制/移动模式按钮 ========== */
+.cfm-copymode-btn {
+    font-size: 12px !important;
+    padding: 3px 10px !important;
+    border: 1px solid var(--SmartThemeBorderColor, #45475a) !important;
+    border-radius: 4px !important;
+    transition: all 0.15s !important;
+}
+.cfm-copymode-btn.cfm-copymode-active {
+    background-color: rgba(166, 227, 161, 0.2) !important;
+    border-color: #a6e3a1 !important;
+    color: #a6e3a1 !important;
+}
+
+/* ========== 收藏入口节点 ========== */
+.cfm-tnode.cfm-tnode-favorites {
+    border-top: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.06));
+    margin-top: 2px;
 }
 
 /* ========== 移动端适配 ========== */

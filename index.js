@@ -7,6 +7,8 @@ jQuery(async () => {
 
     // 会话级变量：仅在当前会话中记录新导入的标签ID，关闭弹窗后自动清除
     let sessionNewlyImportedIds = [];
+    // 复制模式（默认关闭=移动模式）
+    let cfmCopyMode = false;
 
     const getContext = SillyTavern.getContext;
     function getTagList() {
@@ -30,6 +32,8 @@ jQuery(async () => {
             extension_settings[extensionName] = {};
         if (!extension_settings[extensionName].folders)
             extension_settings[extensionName].folders = {};
+        if (!extension_settings[extensionName].favorites)
+            extension_settings[extensionName].favorites = [];
         // 迁移旧 localStorage 数据
         try {
             const oldRaw = localStorage.getItem(STORAGE_KEY);
@@ -55,6 +59,22 @@ jQuery(async () => {
             extension_settings[extensionName].firstInitDone = false;
     }
     ensureSettings();
+
+    // ==================== 收藏管理 ====================
+    function getFavorites() { return extension_settings[extensionName].favorites || []; }
+    function isFavorite(avatar) { return getFavorites().includes(avatar); }
+    function toggleFavorite(avatar) {
+        const favs = getFavorites();
+        const idx = favs.indexOf(avatar);
+        if (idx >= 0) { favs.splice(idx, 1); } else { favs.push(avatar); }
+        extension_settings[extensionName].favorites = favs;
+        getContext().saveSettingsDebounced();
+        return idx < 0;
+    }
+    function getFavoriteCharacters() {
+        const favs = getFavorites();
+        return getCharacters().filter((c) => favs.includes(c.avatar));
+    }
 
     // ==================== 标签自动同步 ====================
     // 首次加载：自动导入所有现有标签为顶级文件夹
@@ -197,15 +217,14 @@ jQuery(async () => {
         }
         return path;
     }
+    // 叶子标签模式：角色只需拥有该文件夹标签，且不拥有任何子文件夹标签
     function getCharactersInFolder(folderTagId) {
-        const pathToHere = getFolderPath(folderTagId);
         const childFolderIds = getChildFolders(folderTagId);
         const characters = getCharacters();
         const tagMap = getTagMap();
         return characters.filter((char) => {
             const charTags = tagMap[char.avatar] || [];
-            if (!pathToHere.every((tid) => charTags.includes(tid)))
-                return false;
+            if (!charTags.includes(folderTagId)) return false;
             for (const childId of childFolderIds) {
                 if (charTags.includes(childId)) return false;
             }
@@ -246,6 +265,116 @@ jQuery(async () => {
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;");
+    }
+    // 排序：优先 sortOrder，其次按名称
+    function sortFolders(folderIds) {
+        return [...folderIds].sort((a, b) => {
+            const orderA = config.folders[a]?.sortOrder ?? 0;
+            const orderB = config.folders[b]?.sortOrder ?? 0;
+            if (orderA !== orderB) return orderA - orderB;
+            return getTagName(a).localeCompare(getTagName(b));
+        });
+    }
+    // 移动文件夹到新父级并插入到指定位置
+    function reorderFolder(folderId, newParentId, insertBeforeId) {
+        config.folders[folderId].parentId = newParentId;
+        const siblings = getChildFolders(newParentId);
+        const others = sortFolders(siblings.filter((id) => id !== folderId));
+        let insertIdx = others.length;
+        if (insertBeforeId) {
+            const idx = others.indexOf(insertBeforeId);
+            if (idx >= 0) insertIdx = idx;
+        }
+        others.splice(insertIdx, 0, folderId);
+        others.forEach((id, i) => {
+            config.folders[id].sortOrder = i + 1;
+        });
+        saveConfig(config);
+    }
+
+    // 移动角色到新文件夹（移除所有旧文件夹标签，只添加目标标签）
+    function moveCharToFolder(avatar, newFolderId) {
+        const tagMap = getTagMap();
+        const charTags = tagMap[avatar] || [];
+        const allFolderIds = getFolderTagIds();
+        for (let i = charTags.length - 1; i >= 0; i--) {
+            if (allFolderIds.includes(charTags[i])) charTags.splice(i, 1);
+        }
+        if (!charTags.includes(newFolderId)) charTags.push(newFolderId);
+        tagMap[avatar] = charTags;
+        getContext().saveSettingsDebounced();
+    }
+    // 复制角色到新文件夹（保留旧标签，额外添加目标标签）
+    function copyCharToFolder(avatar, newFolderId) {
+        addTagToChar(avatar, newFolderId);
+    }
+    // 将角色移出所有文件夹（变为未归类）
+    function removeCharFromAllFolders(avatar) {
+        const tagMap = getTagMap();
+        const charTags = tagMap[avatar] || [];
+        const allFolderIds = getFolderTagIds();
+        for (let i = charTags.length - 1; i >= 0; i--) {
+            if (allFolderIds.includes(charTags[i])) charTags.splice(i, 1);
+        }
+        tagMap[avatar] = charTags;
+        getContext().saveSettingsDebounced();
+    }
+    // 处理角色拖放到文件夹（根据复制模式决定行为）
+    function handleCharDropToFolder(avatar, folderId, charName) {
+        if (cfmCopyMode) {
+            copyCharToFolder(avatar, folderId);
+            toastr.success(`已将「${charName}」复制到「${getTagName(folderId)}」`);
+        } else {
+            moveCharToFolder(avatar, folderId);
+            toastr.success(`已将「${charName}」移动到「${getTagName(folderId)}」`);
+        }
+    }
+    // 自动清理多余的路径标签（只保留最深层的叶子标签）
+    function autoCleanRedundantTags() {
+        const characters = getCharacters();
+        const tagMap = getTagMap();
+        const allFolderIdSet = new Set(getFolderTagIds());
+        let cleanedCount = 0;
+        for (const char of characters) {
+            const charTags = tagMap[char.avatar] || [];
+            const folderTags = charTags.filter((t) => allFolderIdSet.has(t));
+            if (folderTags.length <= 1) continue;
+            const toRemove = new Set();
+            for (const fid of folderTags) {
+                for (const otherId of folderTags) {
+                    if (otherId === fid) continue;
+                    const path = getFolderPath(otherId);
+                    if (path.includes(fid) && path[path.length - 1] !== fid) {
+                        toRemove.add(fid);
+                        break;
+                    }
+                }
+            }
+            for (const fid of toRemove) {
+                const idx = charTags.indexOf(fid);
+                if (idx >= 0) { charTags.splice(idx, 1); cleanedCount++; }
+            }
+        }
+        if (cleanedCount > 0) {
+            getContext().saveSettingsDebounced();
+            console.log(`[${extensionName}] 自动清理了 ${cleanedCount} 个多余的路径标签`);
+            toastr.info(`已自动清理 ${cleanedCount} 个多余的路径标签`, "角色卡文件夹", { timeOut: 3000 });
+        }
+    }
+    // 查找角色当前所在的文件夹路径（用于收藏视图显示）
+    function findCharFolderPath(avatar) {
+        const tagMap = getTagMap();
+        const charTags = tagMap[avatar] || [];
+        const folderIds = getFolderTagIds();
+        const charFolderTags = charTags.filter((t) => folderIds.includes(t));
+        if (charFolderTags.length === 0) return null;
+        let deepest = charFolderTags[0];
+        let maxDepth = getFolderPath(deepest).length;
+        for (let i = 1; i < charFolderTags.length; i++) {
+            const d = getFolderPath(charFolderTags[i]).length;
+            if (d > maxDepth) { deepest = charFolderTags[i]; maxDepth = d; }
+        }
+        return getFolderPath(deepest).map((id) => getTagName(id)).join(" › ");
     }
 
     // 给角色添加标签
@@ -421,13 +550,20 @@ jQuery(async () => {
                 <div class="cfm-header">
                     <h3>📁 角色卡文件夹</h3>
                     <div class="cfm-header-actions">
+                        <button id="cfm-btn-copymode" class="cfm-copymode-btn ${cfmCopyMode ? 'cfm-copymode-active' : ''}" title="${cfmCopyMode ? '当前：复制模式（拖拽角色会保留原位置）' : '当前：移动模式（拖拽角色会从原位置移除）'}"><i class="fa-solid fa-${cfmCopyMode ? 'copy' : 'arrows-turn-to-dots'}"></i> ${cfmCopyMode ? '复制' : '移动'}</button>
                         <button id="cfm-btn-config" title="标签管理"><i class="fa-solid fa-gear"></i></button>
                         <button class="cfm-btn-close" id="cfm-btn-close-main">&times;</button>
                     </div>
                 </div>
                 <div class="cfm-dual-pane">
                     <div class="cfm-left-pane">
-                        <div class="cfm-left-header">文件夹</div>
+                        <div class="cfm-left-header">
+                            <span>文件夹</span>
+                            <span class="cfm-left-header-actions">
+                                <button id="cfm-expand-all" title="展开全部"><i class="fa-solid fa-angles-down"></i></button>
+                                <button id="cfm-collapse-all" title="收起全部"><i class="fa-solid fa-angles-up"></i></button>
+                            </span>
+                        </div>
                         <div class="cfm-left-tree" id="cfm-left-tree"></div>
                     </div>
                     <div class="cfm-right-pane">
@@ -456,6 +592,30 @@ jQuery(async () => {
             e.preventDefault();
             showConfigPopup();
         });
+        // 展开全部 / 收起全部
+        popup.find("#cfm-expand-all").on("click touchend", (e) => {
+            e.preventDefault();
+            const allIds = getFolderTagIds();
+            for (const id of allIds) expandedNodes.add(id);
+            renderLeftTree();
+            renderRightPane();
+        });
+        popup.find("#cfm-collapse-all").on("click touchend", (e) => {
+            e.preventDefault();
+            expandedNodes.clear();
+            renderLeftTree();
+            renderRightPane();
+        });
+
+        popup.find("#cfm-btn-copymode").on("click touchend", (e) => {
+            e.preventDefault();
+            cfmCopyMode = !cfmCopyMode;
+            const btn = $("#cfm-btn-copymode");
+            btn.toggleClass("cfm-copymode-active", cfmCopyMode);
+            btn.attr("title", cfmCopyMode ? "当前：复制模式（拖拽角色会保留原位置）" : "当前：移动模式（拖拽角色会从原位置移除）");
+            btn.html(`<i class="fa-solid fa-${cfmCopyMode ? 'copy' : 'arrows-turn-to-dots'}"></i> ${cfmCopyMode ? '复制' : '移动'}`);
+            toastr.info(cfmCopyMode ? "已切换为复制模式" : "已切换为移动模式", "", { timeOut: 1500 });
+        });
 
         renderLeftTree();
     }
@@ -466,14 +626,40 @@ jQuery(async () => {
         clearNewlyImportedHighlight();
     }
 
+    // 获取文件夹的短名称（只显示最后一段，如 "1-1.1" → "1.1"）
+    function getShortTagName(tagId) {
+        const fullName = getTagName(tagId);
+        const lastDash = fullName.lastIndexOf("-");
+        if (lastDash >= 0 && config.folders[tagId]?.parentId) {
+            return fullName.substring(lastDash + 1);
+        }
+        return fullName;
+    }
+
     // ==================== 左侧树渲染 ====================
     function renderLeftTree() {
         const tree = $("#cfm-left-tree");
         tree.empty();
 
-        const topFolders = getTopLevelFolders().sort((a, b) =>
-            getTagName(a).localeCompare(getTagName(b)),
-        );
+        // 收藏入口（置顶）
+        const favCount = getFavoriteCharacters().length;
+        const favNode = $(`
+            <div class="cfm-tnode cfm-tnode-favorites ${selectedTreeNode === "__favorites__" ? "cfm-tnode-selected" : ""}" data-id="__favorites__" style="padding-left:10px;">
+                <span class="cfm-tnode-arrow cfm-arrow-hidden"><i class="fa-solid fa-caret-right"></i></span>
+                <span class="cfm-tnode-icon"><i class="fa-solid fa-star" style="color:#f9e2af;"></i></span>
+                <span class="cfm-tnode-label">收藏</span>
+                <span class="cfm-tnode-count">${favCount}</span>
+            </div>
+        `);
+        favNode.on("click", (e) => {
+            e.preventDefault();
+            selectedTreeNode = "__favorites__";
+            refreshSelection();
+            renderRightPane();
+        });
+        tree.append(favNode);
+
+        const topFolders = sortFolders(getTopLevelFolders());
 
         for (const folderId of topFolders) {
             renderTreeNode(tree, folderId, 0);
@@ -495,14 +681,29 @@ jQuery(async () => {
             refreshSelection();
             renderRightPane();
         });
-        // 未归类入口也是拖放目标（但不接受文件夹，只接受角色卡）
+        // 未归类入口拖放：将角色移出所有文件夹
         uncatNode.on("dragover", (e) => {
             e.preventDefault();
+            uncatNode.addClass("cfm-drop-target");
+        });
+        uncatNode.on("dragleave", () => { uncatNode.removeClass("cfm-drop-target"); });
+        uncatNode.on("drop", (e) => {
+            e.preventDefault();
+            uncatNode.removeClass("cfm-drop-target");
+            let data;
+            try { data = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain")); } catch { return; }
+            if (data.type === "char" && data.avatar) {
+                removeCharFromAllFolders(data.avatar);
+                toastr.success(`已将「${data.name || data.avatar}」移出所有文件夹`);
+                renderLeftTree();
+                renderRightPane();
+            }
         });
         tree.append(uncatNode);
 
         if (topFolders.length === 0) {
-            tree.prepend(
+            // Insert the hint after favorites but before uncategorized
+            favNode.after(
                 '<div class="cfm-right-empty" style="padding:20px;font-size:12px;">还没有配置文件夹<br>点击右上角 ⚙ 进行配置</div>',
             );
         }
@@ -520,7 +721,7 @@ jQuery(async () => {
             <div class="cfm-tnode ${isSelected ? "cfm-tnode-selected" : ""} ${isNew ? "cfm-tnode-new" : ""}" data-id="${folderId}" style="padding-left:${indent}px;" draggable="true">
                 <span class="cfm-tnode-arrow ${hasChildren ? (isExpanded ? "cfm-arrow-expanded" : "") : "cfm-arrow-hidden"}"><i class="fa-solid fa-caret-right"></i></span>
                 <span class="cfm-tnode-icon"><i class="fa-solid fa-folder${isSelected ? "-open" : ""}"></i></span>
-                <span class="cfm-tnode-label">${escapeHtml(getTagName(folderId))}${isNew ? ' <span class="cfm-new-badge">新</span>' : ""}</span>
+                <span class="cfm-tnode-label">${escapeHtml(getShortTagName(folderId))}${isNew ? ' <span class="cfm-new-badge">新</span>' : ""}</span>
                 <span class="cfm-tnode-count">${count}</span>
             </div>
         `);
@@ -557,43 +758,64 @@ jQuery(async () => {
         });
         node.on("dragend", () => {
             node.removeClass("cfm-dragging");
-            $(".cfm-tnode").removeClass("cfm-drop-target cfm-drop-forbidden");
+            $(".cfm-tnode").removeClass("cfm-drop-target cfm-drop-forbidden cfm-drop-before cfm-drop-after");
         });
 
-        // 左侧树拖放目标：接受文件夹和角色卡
+        // 左侧树拖放目标：三区域（上25%=排序到前面, 中50%=嵌套, 下25%=排序到后面）
         node.on("dragover", (e) => {
             e.preventDefault();
-            let data;
+            // 清除之前的样式
+            node.removeClass("cfm-drop-target cfm-drop-forbidden cfm-drop-before cfm-drop-after");
+
+            // 计算鼠标在节点内的相对位置
+            const rect = node[0].getBoundingClientRect();
+            const mouseY = e.originalEvent.clientY;
+            const relativeY = (mouseY - rect.top) / rect.height;
+
+            // 判断拖放区域
+            let dropZone; // 'before' | 'into' | 'after'
+            if (relativeY < 0.25) dropZone = "before";
+            else if (relativeY > 0.75) dropZone = "after";
+            else dropZone = "into";
+
+            node.data("dropZone", dropZone);
+
+            // 对于文件夹拖放，检查循环（仅 into 模式需要检查）
+            let data = {};
             try {
                 data = JSON.parse(
                     e.originalEvent.dataTransfer.getData("text/plain") || "{}",
                 );
-            } catch {
-                data = {};
-            }
-            // 对于文件夹拖放，检查循环
+            } catch { /* ignore */ }
+
             if (data.type === "folder" && data.id) {
-                if (
-                    data.id === folderId ||
-                    wouldCreateCycle(data.id, folderId)
-                ) {
-                    node.addClass("cfm-drop-forbidden").removeClass(
-                        "cfm-drop-target",
-                    );
+                if (data.id === folderId) {
+                    node.addClass("cfm-drop-forbidden");
+                    e.originalEvent.dataTransfer.dropEffect = "none";
+                    return;
+                }
+                if (dropZone === "into" && wouldCreateCycle(data.id, folderId)) {
+                    node.addClass("cfm-drop-forbidden");
                     e.originalEvent.dataTransfer.dropEffect = "none";
                     return;
                 }
             }
-            node.addClass("cfm-drop-target").removeClass("cfm-drop-forbidden");
+
+            // 应用视觉样式
+            if (dropZone === "before") node.addClass("cfm-drop-before");
+            else if (dropZone === "after") node.addClass("cfm-drop-after");
+            else node.addClass("cfm-drop-target");
+
             e.originalEvent.dataTransfer.dropEffect = "move";
         });
         node.on("dragleave", () => {
-            node.removeClass("cfm-drop-target cfm-drop-forbidden");
+            node.removeClass("cfm-drop-target cfm-drop-forbidden cfm-drop-before cfm-drop-after");
         });
         node.on("drop", (e) => {
             e.preventDefault();
             e.stopPropagation();
-            node.removeClass("cfm-drop-target cfm-drop-forbidden");
+            const dropZone = node.data("dropZone") || "into";
+            node.removeClass("cfm-drop-target cfm-drop-forbidden cfm-drop-before cfm-drop-after");
             let data;
             try {
                 data = JSON.parse(
@@ -604,25 +826,41 @@ jQuery(async () => {
             }
 
             if (data.type === "folder" && data.id) {
-                if (
-                    data.id === folderId ||
-                    wouldCreateCycle(data.id, folderId)
-                ) {
-                    toastr.error("此操作会产生循环嵌套，已阻止");
-                    return;
+                if (data.id === folderId) return;
+
+                if (dropZone === "into") {
+                    // 嵌套：拖入文件夹内部
+                    if (wouldCreateCycle(data.id, folderId)) {
+                        toastr.error("此操作会产生循环嵌套，已阻止");
+                        return;
+                    }
+                    reorderFolder(data.id, folderId, null);
+                    toastr.success(`「${getTagName(data.id)}」已移入「${getTagName(folderId)}」`);
+                } else {
+                    // 排序：插入到当前节点的前面或后面（同级）
+                    const targetParentId = config.folders[folderId]?.parentId || null;
+                    // 检查是否会产生循环（移到目标的父级下）
+                    if (wouldCreateCycle(data.id, targetParentId)) {
+                        toastr.error("此操作会产生循环嵌套，已阻止");
+                        return;
+                    }
+                    if (dropZone === "before") {
+                        reorderFolder(data.id, targetParentId, folderId);
+                        toastr.success(`「${getTagName(data.id)}」已排序到「${getTagName(folderId)}」前面`);
+                    } else {
+                        // 'after': 找到当前节点的下一个兄弟节点作为 insertBefore
+                        const siblings = sortFolders(getChildFolders(targetParentId));
+                        const curIdx = siblings.indexOf(folderId);
+                        const nextSiblingId = curIdx >= 0 && curIdx < siblings.length - 1 ? siblings[curIdx + 1] : null;
+                        reorderFolder(data.id, targetParentId, nextSiblingId);
+                        toastr.success(`「${getTagName(data.id)}」已排序到「${getTagName(folderId)}」后面`);
+                    }
                 }
-                config.folders[data.id].parentId = folderId;
-                saveConfig(config);
-                toastr.success(
-                    `「${getTagName(data.id)}」已移入「${getTagName(folderId)}」`,
-                );
                 renderLeftTree();
                 renderRightPane();
             } else if (data.type === "char" && data.avatar) {
-                // 将角色拖入文件夹 = 给角色添加该文件夹路径上所有标签
-                const pathTags = getFolderPath(folderId);
-                for (const tid of pathTags) addTagToChar(data.avatar, tid);
-                toastr.success(`已将角色移入「${getTagName(folderId)}」`);
+                // 将角色拖入文件夹（无论哪个区域都是加入该文件夹）
+                handleCharDropToFolder(data.avatar, folderId, data.name || data.avatar);
                 renderLeftTree();
                 renderRightPane();
             }
@@ -635,9 +873,7 @@ jQuery(async () => {
             const childContainer = $(
                 `<div class="cfm-tnode-children ${isExpanded ? "cfm-children-expanded" : ""}"></div>`,
             );
-            const children = getChildFolders(folderId).sort((a, b) =>
-                getTagName(a).localeCompare(getTagName(b)),
-            );
+            const children = sortFolders(getChildFolders(folderId));
             for (const childId of children)
                 renderTreeNode(childContainer, childId, depth + 1);
             container.append(childContainer);
@@ -655,7 +891,7 @@ jQuery(async () => {
         $(".cfm-tnode .cfm-tnode-icon i.fa-folder-open")
             .removeClass("fa-folder-open")
             .addClass("fa-folder");
-        if (selectedTreeNode && selectedTreeNode !== "__uncategorized__") {
+        if (selectedTreeNode && selectedTreeNode !== "__uncategorized__" && selectedTreeNode !== "__favorites__") {
             $(
                 `.cfm-tnode[data-id="${selectedTreeNode}"] .cfm-tnode-icon i.fa-folder`,
             )
@@ -694,16 +930,28 @@ jQuery(async () => {
             return;
         }
 
+        if (selectedTreeNode === "__favorites__") {
+            pathEl.text("⭐ 收藏");
+            const chars = getFavoriteCharacters();
+            countEl.text(`${chars.length} 个角色`);
+            if (chars.length === 0) {
+                list.html(
+                    '<div class="cfm-right-empty">还没有收藏任何角色<br><span style="font-size:12px;opacity:0.5;">点击角色行右侧的 ☆ 按钮添加收藏</span></div>',
+                );
+                return;
+            }
+            for (const char of chars) appendCharRow(list, char, true);
+            return;
+        }
+
         // 正常文件夹
         const folderId = selectedTreeNode;
         const path = getFolderPath(folderId)
-            .map((id) => getTagName(id))
+            .map((id) => getShortTagName(id))
             .join(" › ");
         pathEl.text(path);
 
-        const childFolders = getChildFolders(folderId).sort((a, b) =>
-            getTagName(a).localeCompare(getTagName(b)),
-        );
+        const childFolders = sortFolders(getChildFolders(folderId));
         const chars = getCharactersInFolder(folderId);
         const totalItems = childFolders.length + chars.length;
         countEl.text(`${totalItems} 项`);
@@ -719,7 +967,7 @@ jQuery(async () => {
             const row = $(`
                 <div class="cfm-row cfm-row-folder" data-folder-id="${childId}" draggable="true">
                     <div class="cfm-row-icon"><i class="fa-solid fa-folder"></i></div>
-                    <div class="cfm-row-name">${escapeHtml(getTagName(childId))}</div>
+                    <div class="cfm-row-name">${escapeHtml(getShortTagName(childId))}</div>
                     <div class="cfm-row-meta">${childCount} 个角色</div>
                 </div>
             `);
@@ -744,22 +992,148 @@ jQuery(async () => {
             });
             row.on("dragend", () => {
                 row.removeClass("cfm-dragging");
+                $(".cfm-row").removeClass("cfm-drop-target cfm-drop-before cfm-drop-after cfm-drop-forbidden");
             });
+
+            // 右侧文件夹行也是拖放目标（三区域：before/into/after）
+            row.on("dragover", (e) => {
+                e.preventDefault();
+                row.removeClass("cfm-drop-target cfm-drop-before cfm-drop-after cfm-drop-forbidden");
+                const rect = row[0].getBoundingClientRect();
+                const mouseY = e.originalEvent.clientY;
+                const relativeY = (mouseY - rect.top) / rect.height;
+                let dropZone;
+                if (relativeY < 0.25) dropZone = "before";
+                else if (relativeY > 0.75) dropZone = "after";
+                else dropZone = "into";
+                row.data("dropZone", dropZone);
+
+                let data = {};
+                try { data = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain") || "{}"); } catch { /* ignore */ }
+
+                if (data.type === "folder" && data.id) {
+                    if (data.id === childId) { row.addClass("cfm-drop-forbidden"); return; }
+                    if (dropZone === "into" && wouldCreateCycle(data.id, childId)) { row.addClass("cfm-drop-forbidden"); return; }
+                }
+
+                if (dropZone === "before") row.addClass("cfm-drop-before");
+                else if (dropZone === "after") row.addClass("cfm-drop-after");
+                else row.addClass("cfm-drop-target");
+                e.originalEvent.dataTransfer.dropEffect = "move";
+            });
+            row.on("dragleave", () => {
+                row.removeClass("cfm-drop-target cfm-drop-before cfm-drop-after cfm-drop-forbidden");
+            });
+            row.on("drop", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const dropZone = row.data("dropZone") || "into";
+                row.removeClass("cfm-drop-target cfm-drop-before cfm-drop-after cfm-drop-forbidden");
+                let data;
+                try { data = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain")); } catch { return; }
+
+                if (data.type === "folder" && data.id) {
+                    if (data.id === childId) return;
+                    if (dropZone === "into") {
+                        if (wouldCreateCycle(data.id, childId)) { toastr.error("此操作会产生循环嵌套，已阻止"); return; }
+                        reorderFolder(data.id, childId, null);
+                        toastr.success(`「${getTagName(data.id)}」已移入「${getTagName(childId)}」`);
+                    } else {
+                        const targetParentId = config.folders[childId]?.parentId || null;
+                        if (wouldCreateCycle(data.id, targetParentId)) { toastr.error("此操作会产生循环嵌套，已阻止"); return; }
+                        if (dropZone === "before") {
+                            reorderFolder(data.id, targetParentId, childId);
+                            toastr.success(`「${getTagName(data.id)}」已排序到「${getTagName(childId)}」前面`);
+                        } else {
+                            const siblings = sortFolders(getChildFolders(targetParentId));
+                            const curIdx = siblings.indexOf(childId);
+                            const nextSiblingId = curIdx >= 0 && curIdx < siblings.length - 1 ? siblings[curIdx + 1] : null;
+                            reorderFolder(data.id, targetParentId, nextSiblingId);
+                            toastr.success(`「${getTagName(data.id)}」已排序到「${getTagName(childId)}」后面`);
+                        }
+                    }
+                    renderLeftTree();
+                    renderRightPane();
+                } else if (data.type === "char" && data.avatar) {
+                    handleCharDropToFolder(data.avatar, childId, data.name || data.avatar);
+                    renderLeftTree();
+                    renderRightPane();
+                }
+            });
+
             list.append(row);
         }
 
         // 角色卡行
         for (const char of chars) appendCharRow(list, char);
+
+        // 右侧列表本身也是拖放目标（拖到空白区域 = 放入当前文件夹）
+        list.on("dragover", (e) => {
+            // 仅在拖到空白区域时触发（不在子行上）
+            if ($(e.target).closest(".cfm-row").length > 0) return;
+            e.preventDefault();
+            list.addClass("cfm-right-list-drop-target");
+            e.originalEvent.dataTransfer.dropEffect = "move";
+        });
+        list.on("dragleave", (e) => {
+            if ($(e.relatedTarget).closest("#cfm-right-list").length === 0) {
+                list.removeClass("cfm-right-list-drop-target");
+            }
+        });
+        list.on("drop", (e) => {
+            if ($(e.target).closest(".cfm-row").length > 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            list.removeClass("cfm-right-list-drop-target");
+            let data;
+            try { data = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain")); } catch { return; }
+
+            if (data.type === "folder" && data.id) {
+                if (data.id === folderId) return;
+                if (wouldCreateCycle(data.id, folderId)) { toastr.error("此操作会产生循环嵌套，已阻止"); return; }
+                reorderFolder(data.id, folderId, null);
+                toastr.success(`「${getTagName(data.id)}」已移入「${getTagName(folderId)}」`);
+                renderLeftTree();
+                renderRightPane();
+            } else if (data.type === "char" && data.avatar) {
+                handleCharDropToFolder(data.avatar, folderId, data.name || data.avatar);
+                renderLeftTree();
+                renderRightPane();
+            }
+        });
     }
 
-    function appendCharRow(container, char) {
+    function appendCharRow(container, char, showFolderPath) {
         const thumbUrl = getThumbnailUrl("avatar", char.avatar);
+        const fav = isFavorite(char.avatar);
+        const folderPathHtml = showFolderPath ? (() => {
+            const p = findCharFolderPath(char.avatar);
+            return p ? `<div class="cfm-row-folder-path">${escapeHtml(p)}</div>` : '';
+        })() : '';
         const row = $(`
             <div class="cfm-row cfm-row-char" data-avatar="${escapeHtml(char.avatar)}" draggable="true">
                 <div class="cfm-row-icon"><img src="${thumbUrl}" alt="" loading="lazy" onerror="this.src='/img/ai4.png'"></div>
-                <div class="cfm-row-name">${escapeHtml(char.name)}</div>
+                <div class="cfm-row-name">${escapeHtml(char.name)}${folderPathHtml}</div>
+                <div class="cfm-row-star ${fav ? 'cfm-star-active' : ''}" title="${fav ? '取消收藏' : '添加收藏'}"><i class="fa-${fav ? 'solid' : 'regular'} fa-star"></i></div>
             </div>
         `);
+        // 点击星标切换收藏
+        row.find(".cfm-row-star").on("click touchend", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const nowFav = toggleFavorite(char.avatar);
+            const starEl = row.find(".cfm-row-star");
+            starEl.toggleClass("cfm-star-active", nowFav);
+            starEl.attr("title", nowFav ? "取消收藏" : "添加收藏");
+            starEl.find("i").attr("class", `fa-${nowFav ? 'solid' : 'regular'} fa-star`);
+            // 更新左侧树的收藏计数
+            const favCountEl = $(".cfm-tnode-favorites .cfm-tnode-count");
+            if (favCountEl.length) favCountEl.text(getFavoriteCharacters().length);
+            // 如果当前在收藏视图，需要重新渲染
+            if (selectedTreeNode === "__favorites__") {
+                renderRightPane();
+            }
+        });
         // 点击打开角色聊天
         row.on("click", (e) => {
             e.preventDefault();
@@ -1021,9 +1395,7 @@ jQuery(async () => {
             treeContainer.append(selectedHint);
         }
 
-        const topFoldersConfig = getTopLevelFolders().sort((a, b) =>
-            getTagName(a).localeCompare(getTagName(b)),
-        );
+        const topFoldersConfig = sortFolders(getTopLevelFolders());
         if (topFoldersConfig.length === 0) {
             treeContainer.append(
                 '<div class="cfm-empty" style="padding:16px;">还没有配置任何文件夹</div>',
@@ -1217,9 +1589,7 @@ jQuery(async () => {
                 handleDeleteClick(e);
             });
             container.append(item);
-            const children = getChildFolders(folderId).sort((a, b) =>
-                getTagName(a).localeCompare(getTagName(b)),
-            );
+            const children = sortFolders(getChildFolders(folderId));
             for (const childId of children)
                 renderConfigTreeItem(container, childId, depth + 1);
             return;
@@ -1298,9 +1668,7 @@ jQuery(async () => {
             renderConfigBody();
         });
         container.append(item);
-        const children = getChildFolders(folderId).sort((a, b) =>
-            getTagName(a).localeCompare(getTagName(b)),
-        );
+        const children = sortFolders(getChildFolders(folderId));
         for (const childId of children)
             renderConfigTreeItem(container, childId, depth + 1);
     }
@@ -1342,14 +1710,10 @@ jQuery(async () => {
     // ==================== 辅助：获取扁平化的文件夹ID列表（按树形DFS顺序） ====================
     function getFlatFolderList() {
         const result = [];
-        const topFolders = getTopLevelFolders().sort((a, b) =>
-            getTagName(a).localeCompare(getTagName(b)),
-        );
+        const topFolders = sortFolders(getTopLevelFolders());
         function dfs(folderId) {
             result.push(folderId);
-            const children = getChildFolders(folderId).sort((a, b) =>
-                getTagName(a).localeCompare(getTagName(b)),
-            );
+            const children = sortFolders(getChildFolders(folderId));
             for (const childId of children) dfs(childId);
         }
         for (const fid of topFolders) dfs(fid);
@@ -1808,9 +2172,7 @@ jQuery(async () => {
                 : getChildFolders(
                       nativeCurrentPath[nativeCurrentPath.length - 1],
                   );
-        const sorted = foldersToShow.sort((a, b) =>
-            getTagName(a).localeCompare(getTagName(b)),
-        );
+        const sorted = sortFolders(foldersToShow);
 
         for (let i = sorted.length - 1; i >= 0; i--) {
             const fid = sorted[i];
@@ -1872,6 +2234,7 @@ jQuery(async () => {
     // ==================== 初始化 ====================
     autoImportAllTags(); // 首次加载自动导入所有标签
     config = loadConfig(); // 刷新配置（autoImport可能改了settings）
+    autoCleanRedundantTags(); // 自动清理多余的路径标签
     initButton();
     initNativeNesting();
     console.log(`[${extensionName}] 角色卡文件夹分类插件已加载`);
