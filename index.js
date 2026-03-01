@@ -2096,6 +2096,9 @@ jQuery(async () => {
         }
         breadcrumb.empty();
 
+        // 移除旧的入口
+        charBlock.find(".cfm-native-folder-entry, .cfm-native-uncat-entry, .cfm-native-fav-entry").remove();
+
         // 根目录链接
         const rootLink = $(
             '<span class="cfm-nbc-item cfm-nbc-link">📁 根目录</span>',
@@ -2111,8 +2114,10 @@ jQuery(async () => {
         for (let i = 0; i < nativeCurrentPath.length; i++) {
             breadcrumb.append('<span class="cfm-nbc-sep">›</span>');
             const fid = nativeCurrentPath[i];
+            const isSpecial = fid === "__uncategorized__" || fid === "__favorites__";
+            const displayName = fid === "__uncategorized__" ? "未归类角色" : fid === "__favorites__" ? "⭐ 收藏" : escapeHtml(getTagName(fid));
             const link = $(
-                `<span class="cfm-nbc-item ${i === nativeCurrentPath.length - 1 ? "cfm-nbc-current" : "cfm-nbc-link"}">${escapeHtml(getTagName(fid))}</span>`,
+                `<span class="cfm-nbc-item ${i === nativeCurrentPath.length - 1 ? "cfm-nbc-current" : "cfm-nbc-link"}">${displayName}</span>`,
             );
             if (i < nativeCurrentPath.length - 1) {
                 const pathTo = nativeCurrentPath.slice(0, i + 1);
@@ -2125,109 +2130,98 @@ jQuery(async () => {
         }
 
         // 显示/隐藏角色卡
-        const allCards = charBlock.children(".character_select, .group_select");
+        const allCards = charBlock.children(".character_select:not(.cfm-native-folder-entry):not(.cfm-native-uncat-entry):not(.cfm-native-fav-entry), .group_select");
         const tagMap = getTagMap();
 
+        // 辅助函数：获取卡片的 avatar
+        function getCardAvatar(cardEl) {
+            const chid = $(cardEl).attr("chid");
+            if (chid === undefined) return null;
+            const chars = getCharacters();
+            const idx = parseInt(chid, 10);
+            return (idx >= 0 && idx < chars.length) ? chars[idx]?.avatar : null;
+        }
+
+        const lastPathItem = nativeCurrentPath.length > 0 ? nativeCurrentPath[nativeCurrentPath.length - 1] : null;
+
         if (nativeCurrentPath.length === 0) {
-            // 根目录：隐藏所有有文件夹标签的角色
-            const folderIds = getFolderTagIds();
+            // 根目录：隐藏所有角色卡（只显示文件夹入口）
             allCards.each(function () {
-                const avatar =
-                    $(this).attr("chid") !== undefined
-                        ? getCharacters()[$(this).attr("chid")]?.avatar
-                        : null;
-                if (!avatar) {
-                    $(this).removeClass("cfm-native-hidden");
-                    return;
-                }
-                const charTags = tagMap[avatar] || [];
-                const hasFolder = folderIds.some((fid) =>
-                    charTags.includes(fid),
-                );
-                $(this).toggleClass("cfm-native-hidden", hasFolder);
+                $(this).addClass("cfm-native-hidden");
+            });
+        } else if (lastPathItem === "__uncategorized__") {
+            // 未归类视图：只显示未归类的角色
+            const uncatAvatars = new Set(getUncategorizedCharacters().map((c) => c.avatar));
+            allCards.each(function () {
+                const avatar = getCardAvatar(this);
+                $(this).toggleClass("cfm-native-hidden", !avatar || !uncatAvatars.has(avatar));
+            });
+        } else if (lastPathItem === "__favorites__") {
+            // 收藏视图：只显示收藏的角色
+            const favAvatars = new Set(getFavoriteCharacters().map((c) => c.avatar));
+            allCards.each(function () {
+                const avatar = getCardAvatar(this);
+                $(this).toggleClass("cfm-native-hidden", !avatar || !favAvatars.has(avatar));
             });
         } else {
-            // 子目录
-            const currentFolderId =
-                nativeCurrentPath[nativeCurrentPath.length - 1];
+            // 普通文件夹视图
+            const currentFolderId = lastPathItem;
             const charsHere = getCharactersInFolder(currentFolderId);
             const charAvatars = new Set(charsHere.map((c) => c.avatar));
             allCards.each(function () {
-                const avatar =
-                    $(this).attr("chid") !== undefined
-                        ? getCharacters()[$(this).attr("chid")]?.avatar
-                        : null;
-                $(this).toggleClass(
-                    "cfm-native-hidden",
-                    !avatar || !charAvatars.has(avatar),
+                const avatar = getCardAvatar(this);
+                $(this).toggleClass("cfm-native-hidden", !avatar || !charAvatars.has(avatar));
+            });
+        }
+
+        // 在角色列表前插入文件夹入口（仅在根目录和普通文件夹视图中）
+        if (nativeCurrentPath.length === 0 || (lastPathItem && lastPathItem !== "__uncategorized__" && lastPathItem !== "__favorites__")) {
+            const foldersToShow =
+                nativeCurrentPath.length === 0
+                    ? getTopLevelFolders()
+                    : getChildFolders(lastPathItem);
+            const sorted = sortFolders(foldersToShow);
+
+            for (let i = sorted.length - 1; i >= 0; i--) {
+                const fid = sorted[i];
+                const count = countCharsInFolderRecursive(fid);
+                const entry = $(
+                    `<div class="character_select cfm-native-folder-entry" style="cursor:pointer;"><div style="display:flex;align-items:center;gap:8px;padding:8px;"><i class="fa-solid fa-folder" style="color:#f9e2af;font-size:18px;"></i><span>${escapeHtml(getTagName(fid))}</span><span style="opacity:0.4;font-size:12px;">(${count})</span></div></div>`,
                 );
-            });
+                entry.on("click", (e) => {
+                    e.stopPropagation();
+                    nativeCurrentPath.push(fid);
+                    applyNativeNesting();
+                });
+                charBlock.prepend(entry);
+            }
         }
 
-        // 在角色列表前插入文件夹入口
-        charBlock.find(".cfm-native-folder-entry").remove();
-        const foldersToShow =
-            nativeCurrentPath.length === 0
-                ? getTopLevelFolders()
-                : getChildFolders(
-                      nativeCurrentPath[nativeCurrentPath.length - 1],
-                  );
-        const sorted = sortFolders(foldersToShow);
-
-        for (let i = sorted.length - 1; i >= 0; i--) {
-            const fid = sorted[i];
-            const count = countCharsInFolderRecursive(fid);
-            const entry = $(
-                `<div class="character_select cfm-native-folder-entry" style="cursor:pointer;"><div style="display:flex;align-items:center;gap:8px;padding:8px;"><i class="fa-solid fa-folder" style="color:#f9e2af;font-size:18px;"></i><span>${escapeHtml(getTagName(fid))}</span><span style="opacity:0.4;font-size:12px;">(${count})</span></div></div>`,
-            );
-            entry.on("click", () => {
-                nativeCurrentPath.push(fid);
-                applyNativeNesting();
-            });
-            charBlock.prepend(entry);
-        }
-
-        // 未归类入口（仅根目录）
+        // 收藏入口 + 未归类入口（仅根目录）
         if (nativeCurrentPath.length === 0) {
-            charBlock.find(".cfm-native-uncat-entry").remove();
+            // 未归类入口（底部）
             const uncatCount = getUncategorizedCharacters().length;
             const uncatEntry = $(
                 `<div class="character_select cfm-native-uncat-entry" style="cursor:pointer;"><div style="display:flex;align-items:center;gap:8px;padding:8px;"><i class="fa-solid fa-box-open" style="color:#a6adc8;font-size:18px;"></i><span>未归类角色</span><span style="opacity:0.4;font-size:12px;">(${uncatCount})</span></div></div>`,
             );
-            uncatEntry.on("click", () => {
-                const uncatAvatars = new Set(
-                    getUncategorizedCharacters().map((c) => c.avatar),
-                );
-                allCards.each(function () {
-                    const avatar =
-                        $(this).attr("chid") !== undefined
-                            ? getCharacters()[$(this).attr("chid")]?.avatar
-                            : null;
-                    $(this).toggleClass(
-                        "cfm-native-hidden",
-                        !avatar || !uncatAvatars.has(avatar),
-                    );
-                });
-                charBlock
-                    .find(".cfm-native-folder-entry, .cfm-native-uncat-entry")
-                    .addClass("cfm-native-hidden");
+            uncatEntry.on("click", (e) => {
+                e.stopPropagation();
                 nativeCurrentPath = ["__uncategorized__"];
-                // 更新面包屑
-                breadcrumb.empty();
-                const rl = $(
-                    '<span class="cfm-nbc-item cfm-nbc-link">📁 根目录</span>',
-                );
-                rl.on("click", () => {
-                    nativeCurrentPath = [];
-                    applyNativeNesting();
-                });
-                breadcrumb.append(rl);
-                breadcrumb.append('<span class="cfm-nbc-sep">›</span>');
-                breadcrumb.append(
-                    '<span class="cfm-nbc-item cfm-nbc-current">未归类角色</span>',
-                );
+                applyNativeNesting();
             });
             charBlock.append(uncatEntry);
+
+            // 收藏入口（顶部，在文件夹之前）
+            const favCount = getFavoriteCharacters().length;
+            const favEntry = $(
+                `<div class="character_select cfm-native-fav-entry" style="cursor:pointer;"><div style="display:flex;align-items:center;gap:8px;padding:8px;"><i class="fa-solid fa-star" style="color:#f9e2af;font-size:18px;"></i><span>收藏</span><span style="opacity:0.4;font-size:12px;">(${favCount})</span></div></div>`,
+            );
+            favEntry.on("click", (e) => {
+                e.stopPropagation();
+                nativeCurrentPath = ["__favorites__"];
+                applyNativeNesting();
+            });
+            charBlock.prepend(favEntry);
         }
     }
 
