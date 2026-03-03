@@ -865,48 +865,6 @@
     z-index: 10003;
 }
 
-/* ========== 原生界面嵌套导航 ========== */
-.cfm-native-hidden {
-    display: none !important;
-}
-#cfm-native-breadcrumb {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: 8px 12px;
-    margin-bottom: 6px;
-    font-size: 13px;
-    flex-wrap: wrap;
-    border-radius: 6px;
-    background-color: var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.15));
-    border: 1px solid var(--SmartThemeBorderColor, #45475a);
-}
-#cfm-native-breadcrumb:empty {
-    display: none;
-}
-.cfm-nbc-item {
-    padding: 2px 6px;
-    border-radius: 3px;
-    transition: background-color 0.15s;
-}
-.cfm-nbc-link {
-    cursor: pointer;
-    opacity: 0.7;
-}
-.cfm-nbc-link:hover {
-    opacity: 1;
-    background-color: rgba(255, 255, 255, 0.1);
-    text-decoration: underline;
-}
-.cfm-nbc-current {
-    font-weight: 600;
-    opacity: 1;
-}
-.cfm-nbc-sep {
-    opacity: 0.4;
-    user-select: none;
-}
-
 /* ========== 收藏星标按钮 ========== */
 .cfm-row-star {
     flex-shrink: 0;
