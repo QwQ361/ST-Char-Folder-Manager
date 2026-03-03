@@ -649,6 +649,7 @@ jQuery(async () => {
           longPressTriggered = true;
           isDragging = true;
           btn.css("cursor", "grabbing");
+          btn.addClass("cfm-long-press-ready");
           // 震动反馈（如果支持）
           if (navigator.vibrate) navigator.vibrate(50);
         }, 500);
@@ -696,6 +697,7 @@ jQuery(async () => {
       if (!isDragging) return;
       isDragging = false;
       btn.css("cursor", "grab");
+      btn.removeClass("cfm-long-press-ready");
       if (hasMoved) {
         localStorage.setItem(
           STORAGE_KEY_BTN_POS,
