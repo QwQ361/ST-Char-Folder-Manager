@@ -1281,3 +1281,21 @@
         min-height: 56px;
     }
 }
+
+/* ========== 长按准备拖拽的视觉反馈 ========== */
+.cfm-long-press-ready {
+    animation: cfm-pulse 0.6s ease-in-out;
+    box-shadow: 0 0 0 3px rgba(137, 180, 250, 0.5) !important;
+    transform: scale(1.03);
+    transition: all 0.2s ease;
+    background-color: rgba(137, 180, 250, 0.15) !important;
+}
+
+@keyframes cfm-pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 3px rgba(137, 180, 250, 0.5);
+    }
+    50% {
+        box-shadow: 0 0 0 6px rgba(137, 180, 250, 0.25);
+    }
+}
