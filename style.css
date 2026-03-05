@@ -1284,11 +1284,11 @@
 
 /* ========== 长按准备拖拽的视觉反馈 ========== */
 .cfm-long-press-ready {
-    animation: cfm-pulse 0.6s ease-in-out;
     box-shadow: 0 0 0 3px rgba(137, 180, 250, 0.5) !important;
-    transform: scale(1.03);
-    transition: all 0.2s ease;
+    transform: scale(1.05);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
     background-color: rgba(137, 180, 250, 0.15) !important;
+    animation: cfm-pulse 1s ease-in-out infinite;
 }
 
 @keyframes cfm-pulse {
@@ -1298,4 +1298,31 @@
     50% {
         box-shadow: 0 0 0 6px rgba(137, 180, 250, 0.25);
     }
+}
+
+/* ========== 触摸拖拽幽灵元素 ========== */
+.cfm-touch-ghost {
+    position: fixed;
+    z-index: 99999;
+    pointer-events: none;
+    padding: 6px 14px;
+    border-radius: 8px;
+    background: rgba(137, 180, 250, 0.9);
+    color: #1e1e2e;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    transform: translate(-50%, 0);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.92;
+    transition: opacity 0.15s;
+}
+
+/* 触摸拖拽中的源元素 */
+.cfm-touch-dragging {
+    opacity: 0.35 !important;
+    background-color: rgba(137, 180, 250, 0.08) !important;
 }

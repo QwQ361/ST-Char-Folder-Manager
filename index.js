@@ -284,6 +284,215 @@ jQuery(async () => {
     });
   }
 
+  // ==================== 移动端触摸拖拽管理器 ====================
+  const touchDragMgr = {
+    active: false,
+    data: null,
+    ghost: null,
+    sourceEl: null,
+    _timer: null,
+    _startX: 0,
+    _startY: 0,
+    _lastTarget: null,
+
+    /** 为元素注册触摸拖拽（长按500ms启动） */
+    bind(el, getDataFn) {
+      const mgr = this;
+      const dom = el instanceof jQuery ? el[0] : el;
+      let sx, sy;
+
+      dom.addEventListener("touchstart", (e) => {
+        if (mgr.active) return;
+        if (e.target.closest(".cfm-row-star, .cfm-tnode-arrow")) return;
+        const t = e.touches[0];
+        sx = t.clientX; sy = t.clientY;
+        mgr._startX = sx; mgr._startY = sy;
+
+        mgr._timer = setTimeout(() => {
+          const data = getDataFn();
+          if (!data) return;
+          mgr.active = true;
+          mgr.data = data;
+          mgr.sourceEl = dom;
+          dom.classList.add("cfm-touch-dragging");
+          // 创建幽灵
+          const g = document.createElement("div");
+          g.className = "cfm-touch-ghost";
+          g.textContent = (data.type === "folder" ? "📁 " : "👤 ") + (data.name || "");
+          g.style.left = sx + "px";
+          g.style.top = (sy - 50) + "px";
+          document.body.appendChild(g);
+          mgr.ghost = g;
+          if (navigator.vibrate) navigator.vibrate(50);
+        }, 500);
+      }, { passive: true });
+
+      dom.addEventListener("touchmove", (e) => {
+        const t = e.touches[0];
+        const dx = Math.abs(t.clientX - sx);
+        const dy = Math.abs(t.clientY - sy);
+        // 未激活时，移动超过10px取消长按
+        if (!mgr.active) {
+          if (dx > 10 || dy > 10) { mgr._cancelTimer(); }
+          return;
+        }
+        e.preventDefault(); // 阻止滚动
+        if (mgr.ghost) {
+          mgr.ghost.style.left = t.clientX + "px";
+          mgr.ghost.style.top = (t.clientY - 50) + "px";
+        }
+        mgr._highlightTarget(t.clientX, t.clientY);
+      }, { passive: false });
+
+      dom.addEventListener("touchend", (e) => {
+        mgr._cancelTimer();
+        if (!mgr.active) return;
+        e.preventDefault();
+        const t = e.changedTouches[0];
+        mgr._executeDrop(t.clientX, t.clientY);
+        mgr._cleanup();
+      }, { passive: false });
+
+      dom.addEventListener("touchcancel", () => {
+        mgr._cancelTimer();
+        if (mgr.active) mgr._cleanup();
+      });
+    },
+
+    _cancelTimer() {
+      if (this._timer) { clearTimeout(this._timer); this._timer = null; }
+    },
+
+    _clearHighlight() {
+      if (this._lastTarget) {
+        this._lastTarget.classList.remove(
+          "cfm-drop-target", "cfm-drop-before", "cfm-drop-after",
+          "cfm-drop-forbidden", "cfm-right-list-drop-target"
+        );
+        this._lastTarget = null;
+      }
+    },
+
+    _highlightTarget(x, y) {
+      this._clearHighlight();
+      if (this.ghost) this.ghost.style.display = "none";
+      const el = document.elementFromPoint(x, y);
+      if (this.ghost) this.ghost.style.display = "";
+      if (!el) return;
+
+      const tnode = el.closest(".cfm-tnode[data-id]");
+      const row = el.closest(".cfm-row[data-folder-id]");
+      const uncatNode = el.closest(".cfm-tnode-uncategorized");
+      const rightList = el.closest(".cfm-right-list");
+
+      let target = tnode || row || uncatNode;
+      if (!target && rightList) { target = rightList; }
+      if (!target) return;
+
+      const targetId = target.dataset?.id || target.dataset?.folderId;
+
+      // 三区域判定
+      let zone = "into";
+      if ((tnode || row) && !uncatNode) {
+        const rect = target.getBoundingClientRect();
+        const relY = (y - rect.top) / rect.height;
+        if (relY < 0.25) zone = "before";
+        else if (relY > 0.75) zone = "after";
+      }
+
+      // 禁止检测
+      if (this.data.type === "folder" && this.data.id === targetId) {
+        target.classList.add("cfm-drop-forbidden");
+        this._lastTarget = target; return;
+      }
+      if (this.data.type === "folder" && zone === "into" && targetId && wouldCreateCycle(this.data.id, targetId)) {
+        target.classList.add("cfm-drop-forbidden");
+        this._lastTarget = target; return;
+      }
+
+      if (target === rightList) target.classList.add("cfm-right-list-drop-target");
+      else if (zone === "before") target.classList.add("cfm-drop-before");
+      else if (zone === "after") target.classList.add("cfm-drop-after");
+      else target.classList.add("cfm-drop-target");
+      this._lastTarget = target;
+    },
+
+    _executeDrop(x, y) {
+      if (this.ghost) this.ghost.style.display = "none";
+      const el = document.elementFromPoint(x, y);
+      if (this.ghost) this.ghost.style.display = "";
+      if (!el || !this.data) return;
+
+      const tnode = el.closest(".cfm-tnode[data-id]");
+      const row = el.closest(".cfm-row[data-folder-id]");
+      const uncatNode = el.closest(".cfm-tnode-uncategorized");
+      const rightList = el.closest(".cfm-right-list");
+
+      let target = tnode || row || uncatNode;
+      let targetId = target?.dataset?.id || target?.dataset?.folderId;
+
+      let zone = "into";
+      if ((tnode || row) && !uncatNode && target) {
+        const rect = target.getBoundingClientRect();
+        const relY = (y - rect.top) / rect.height;
+        if (relY < 0.25) zone = "before";
+        else if (relY > 0.75) zone = "after";
+      }
+
+      const d = this.data;
+      if (d.type === "folder") {
+        if (uncatNode) return;
+        if (targetId && targetId !== d.id) {
+          if (zone === "into") {
+            if (wouldCreateCycle(d.id, targetId)) { toastr.error("此操作会产生循环嵌套，已阻止"); return; }
+            reorderFolder(d.id, targetId, null);
+            toastr.success(`「${getTagName(d.id)}」已移入「${getTagName(targetId)}」`);
+          } else {
+            const pId = config.folders[targetId]?.parentId || null;
+            if (wouldCreateCycle(d.id, pId)) { toastr.error("此操作会产生循环嵌套，已阻止"); return; }
+            if (zone === "before") {
+              reorderFolder(d.id, pId, targetId);
+              toastr.success(`「${getTagName(d.id)}」已排序到「${getTagName(targetId)}」前面`);
+            } else {
+              const sibs = sortFolders(getChildFolders(pId));
+              const ci = sibs.indexOf(targetId);
+              const nxt = ci >= 0 && ci < sibs.length - 1 ? sibs[ci + 1] : null;
+              reorderFolder(d.id, pId, nxt);
+              toastr.success(`「${getTagName(d.id)}」已排序到「${getTagName(targetId)}」后面`);
+            }
+          }
+          renderLeftTree(); renderRightPane();
+        } else if (!target && rightList && selectedTreeNode && selectedTreeNode !== "__uncategorized__" && selectedTreeNode !== "__favorites__") {
+          if (d.id !== selectedTreeNode && !wouldCreateCycle(d.id, selectedTreeNode)) {
+            reorderFolder(d.id, selectedTreeNode, null);
+            toastr.success(`「${getTagName(d.id)}」已移入「${getTagName(selectedTreeNode)}」`);
+            renderLeftTree(); renderRightPane();
+          }
+        }
+      } else if (d.type === "char") {
+        if (uncatNode) {
+          removeCharFromAllFolders(d.avatar);
+          toastr.success(`已将「${d.name || d.avatar}」移出所有文件夹`);
+          renderLeftTree(); renderRightPane();
+        } else if (targetId) {
+          handleCharDropToFolder(d.avatar, targetId, d.name || d.avatar);
+          renderLeftTree(); renderRightPane();
+        } else if (!target && rightList && selectedTreeNode && selectedTreeNode !== "__uncategorized__" && selectedTreeNode !== "__favorites__") {
+          handleCharDropToFolder(d.avatar, selectedTreeNode, d.name || d.avatar);
+          renderLeftTree(); renderRightPane();
+        }
+      }
+    },
+
+    _cleanup() {
+      if (this.ghost) { this.ghost.remove(); this.ghost = null; }
+      if (this.sourceEl) { this.sourceEl.classList.remove("cfm-touch-dragging"); this.sourceEl = null; }
+      this._clearHighlight();
+      this.active = false;
+      this.data = null;
+    }
+  };
+
   // ==================== 排序功能 ====================
   // 拍摄排序快照（仅首次拍摄）
   function takeSortSnapshot() {
@@ -633,93 +842,77 @@ jQuery(async () => {
     let longPressTimer = null;
     let longPressTriggered = false;
 
-    btn.on("mousedown touchstart", (e) => {
+    // PC端：鼠标拖拽
+    btn.on("mousedown", (e) => {
       hasMoved = false;
-      longPressTriggered = false;
-      const ev = e.type === "touchstart" ? e.originalEvent.touches[0] : e;
       const pos = btn.offset();
-      offset.x = ev.pageX - pos.left;
-      offset.y = ev.pageY - pos.top;
-      startPos.x = ev.pageX;
-      startPos.y = ev.pageY;
-
-      // 移动端：长按500ms后才能拖拽
-      if (e.type === "touchstart") {
-        longPressTimer = setTimeout(() => {
-          longPressTriggered = true;
-          isDragging = true;
-          btn.css("cursor", "grabbing");
-          btn.addClass("cfm-long-press-ready");
-          // 震动反馈（如果支持）
-          if (navigator.vibrate) navigator.vibrate(50);
-        }, 500);
-      } else {
-        // PC端：立即可拖拽
-        isDragging = true;
-        btn.css("cursor", "grabbing");
-      }
+      offset.x = e.pageX - pos.left;
+      offset.y = e.pageY - pos.top;
+      startPos.x = e.pageX;
+      startPos.y = e.pageY;
+      isDragging = true;
+      btn.css("cursor", "grabbing");
       e.preventDefault();
     });
-
-    $(document).on("mousemove.cfmDrag touchmove.cfmDrag", (e) => {
+    $(document).on("mousemove.cfmDrag", (e) => {
       if (!isDragging) return;
-      const ev = e.type === "touchmove" ? e.originalEvent.touches[0] : e;
-      const deltaX = Math.abs(ev.pageX - startPos.x);
-      const deltaY = Math.abs(ev.pageY - startPos.y);
-      // 移动超过5px才算拖拽
-      if (deltaX > 5 || deltaY > 5) {
-        hasMoved = true;
-      }
-      if (hasMoved) {
-        btn.css({
-          top: ev.pageY - offset.y + "px",
-          left: ev.pageX - offset.x + "px",
-          right: "auto",
-          bottom: "auto",
-        });
-      }
+      if (Math.abs(e.pageX - startPos.x) > 5 || Math.abs(e.pageY - startPos.y) > 5) hasMoved = true;
+      if (hasMoved) btn.css({ top: (e.pageY - offset.y) + "px", left: (e.pageX - offset.x) + "px", right: "auto", bottom: "auto" });
     });
-
-    $(document).on("mouseup.cfmDrag touchend.cfmDrag", (e) => {
-      // 清除长按计时器
-      if (longPressTimer) {
-        clearTimeout(longPressTimer);
-        longPressTimer = null;
-      }
-
-      if (!isDragging && !longPressTriggered) {
-        // 短按：触发点击
-        e.preventDefault();
-        showMainPopup();
-        return;
-      }
-
+    $(document).on("mouseup.cfmDrag", () => {
       if (!isDragging) return;
       isDragging = false;
       btn.css("cursor", "grab");
-      btn.removeClass("cfm-long-press-ready");
-      if (hasMoved) {
-        localStorage.setItem(
-          STORAGE_KEY_BTN_POS,
-          JSON.stringify({
-            top: btn.css("top"),
-            left: btn.css("left"),
-          }),
-        );
-      }
-      // 重置状态
-      setTimeout(() => {
-        hasMoved = false;
-        longPressTriggered = false;
-      }, 100);
+      if (hasMoved) localStorage.setItem(STORAGE_KEY_BTN_POS, JSON.stringify({ top: btn.css("top"), left: btn.css("left") }));
+      setTimeout(() => { hasMoved = false; }, 50);
     });
+    btn.on("click", (e) => { if (hasMoved) { e.preventDefault(); e.stopPropagation(); return; } showMainPopup(); });
 
-    btn.on("click", (e) => {
-      // 阻止默认的click事件，因为我们在touchend/mouseup中处理
-      if (hasMoved) {
-        e.preventDefault();
-        e.stopPropagation();
+    // 移动端：触摸长按拖拽（使用原生事件 + passive:false）
+    const btnEl = btn[0];
+    let tSx, tSy;
+    btnEl.addEventListener("touchstart", (e) => {
+      hasMoved = false; longPressTriggered = false;
+      const t = e.touches[0];
+      tSx = t.clientX; tSy = t.clientY;
+      const pos = btn.offset();
+      offset.x = t.pageX - pos.left;
+      offset.y = t.pageY - pos.top;
+      longPressTimer = setTimeout(() => {
+        longPressTriggered = true; isDragging = true;
+        btn.addClass("cfm-long-press-ready");
+        if (navigator.vibrate) navigator.vibrate(50);
+      }, 500);
+    }, { passive: true });
+
+    btnEl.addEventListener("touchmove", (e) => {
+      const t = e.touches[0];
+      if (!isDragging) {
+        if (Math.abs(t.clientX - tSx) > 10 || Math.abs(t.clientY - tSy) > 10) {
+          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        }
+        return;
       }
+      e.preventDefault();
+      hasMoved = true;
+      btn.css({ top: (t.pageY - offset.y) + "px", left: (t.pageX - offset.x) + "px", right: "auto", bottom: "auto" });
+    }, { passive: false });
+
+    btnEl.addEventListener("touchend", (e) => {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+      if (!isDragging && !longPressTriggered) { e.preventDefault(); showMainPopup(); return; }
+      if (isDragging) {
+        isDragging = false;
+        btn.removeClass("cfm-long-press-ready");
+        if (hasMoved) localStorage.setItem(STORAGE_KEY_BTN_POS, JSON.stringify({ top: btn.css("top"), left: btn.css("left") }));
+      }
+      hasMoved = false; longPressTriggered = false;
+    }, { passive: false });
+
+    btnEl.addEventListener("touchcancel", () => {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+      if (isDragging) { isDragging = false; btn.removeClass("cfm-long-press-ready"); }
+      hasMoved = false; longPressTriggered = false;
     });
 
     let resizeTimer;
@@ -1161,40 +1354,10 @@ jQuery(async () => {
       renderRightPane();
     });
 
-    // 左侧树拖拽：拖动文件夹（支持长按）
-    let nodeLongPressTimer = null;
-    let nodeDraggable = false;
+    // 移动端触摸拖拽
+    touchDragMgr.bind(node, () => ({ type: "folder", id: folderId, name: getTagName(folderId) }));
 
-    node.on("mousedown touchstart", (e) => {
-      if (e.type === "touchstart") {
-        nodeDraggable = false;
-        nodeLongPressTimer = setTimeout(() => {
-          nodeDraggable = true;
-          node.attr("draggable", "true");
-          if (navigator.vibrate) navigator.vibrate(50);
-          // 触发拖拽开始
-          const touch = e.originalEvent.touches[0];
-          const dragEvent = new DragEvent("dragstart", {
-            bubbles: true,
-            cancelable: true,
-            clientX: touch.clientX,
-            clientY: touch.clientY,
-          });
-          node[0].dispatchEvent(dragEvent);
-        }, 500);
-      }
-    });
-
-    node.on("touchend touchcancel", () => {
-      if (nodeLongPressTimer) {
-        clearTimeout(nodeLongPressTimer);
-        nodeLongPressTimer = null;
-      }
-      if (!nodeDraggable) {
-        node.attr("draggable", "false");
-      }
-    });
-
+    // PC端拖拽
     node.on("dragstart", (e) => {
       e.originalEvent.dataTransfer.setData(
         "text/plain",
@@ -1205,8 +1368,6 @@ jQuery(async () => {
     });
     node.on("dragend", () => {
       node.removeClass("cfm-dragging");
-      node.attr("draggable", "false");
-      nodeDraggable = false;
       $(".cfm-tnode").removeClass(
         "cfm-drop-target cfm-drop-forbidden cfm-drop-before cfm-drop-after",
       );
@@ -1676,32 +1837,10 @@ jQuery(async () => {
         if (selectCharacterById) selectCharacterById(idx);
       }
     });
-    // 角色卡可拖拽（支持长按）
-    let charLongPressTimer = null;
-    let charDraggable = false;
+    // 移动端触摸拖拽
+    touchDragMgr.bind(row, () => ({ type: "char", avatar: char.avatar, name: char.name }));
 
-    row.on("mousedown touchstart", (e) => {
-      if ($(e.target).closest(".cfm-row-star").length) return; // 点击星标不触发
-      if (e.type === "touchstart") {
-        charDraggable = false;
-        charLongPressTimer = setTimeout(() => {
-          charDraggable = true;
-          row.attr("draggable", "true");
-          if (navigator.vibrate) navigator.vibrate(50);
-        }, 500);
-      }
-    });
-
-    row.on("touchend touchcancel", () => {
-      if (charLongPressTimer) {
-        clearTimeout(charLongPressTimer);
-        charLongPressTimer = null;
-      }
-      if (!charDraggable) {
-        row.attr("draggable", "false");
-      }
-    });
-
+    // PC端拖拽
     row.on("dragstart", (e) => {
       e.originalEvent.dataTransfer.setData(
         "text/plain",
@@ -1716,8 +1855,6 @@ jQuery(async () => {
     });
     row.on("dragend", () => {
       row.removeClass("cfm-dragging");
-      row.attr("draggable", "false");
-      charDraggable = false;
     });
     container.append(row);
   }
