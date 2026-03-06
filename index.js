@@ -53,10 +53,6 @@ jQuery(async () => {
       extension_settings[extensionName].buttonMode = "topbar";
     if (extension_settings[extensionName].firstInitDone === undefined)
       extension_settings[extensionName].firstInitDone = false;
-    if (!extension_settings[extensionName].virtualCharMap)
-      extension_settings[extensionName].virtualCharMap = {};
-    if (extension_settings[extensionName].syncTags === undefined)
-      extension_settings[extensionName].syncTags = true;
   }
   ensureSettings();
 
@@ -82,25 +78,6 @@ jQuery(async () => {
   function getFavoriteCharacters() {
     const favs = getFavorites();
     return getCharacters().filter((c) => favs.includes(c.avatar));
-  }
-
-  // ==================== 同步标签开关 & 虚拟文件夹辅助 ====================
-  function getSyncTags() {
-    return extension_settings[extensionName].syncTags !== false;
-  }
-  function setSyncTags(val) {
-    extension_settings[extensionName].syncTags = val;
-    getContext().saveSettingsDebounced();
-  }
-  function isVirtualFolder(folderId) {
-    return config.folders[folderId]?.isVirtual === true;
-  }
-  function getVirtualCharMap() {
-    return extension_settings[extensionName].virtualCharMap || {};
-  }
-  function saveVirtualCharMap(map) {
-    extension_settings[extensionName].virtualCharMap = map;
-    getContext().saveSettingsDebounced();
   }
 
   // ==================== 标签自动同步 ====================
@@ -214,150 +191,8 @@ jQuery(async () => {
 
   // ==================== 辅助函数 ====================
   function getTagName(tagId) {
-    if (config.folders[tagId]?.isVirtual) {
-      return config.folders[tagId].name || tagId;
-    }
-    const folder = config.folders[tagId];
-    if (folder && folder.displayName) return folder.displayName;
     const tag = getTagList().find((t) => t.id === tagId);
     return tag ? tag.name : tagId;
-  }
-  // 获取真实标签名称（用于内部逻辑）
-  function getFullTagName(tagId) {
-    const tag = getTagList().find((t) => t.id === tagId);
-    return tag ? tag.name : tagId;
-  }
-  // 构建带路径前缀的标签名（用于解决重名冲突）
-  function buildPrefixedTagName(name, parentTagId) {
-    const pathNames = [];
-    let current = parentTagId;
-    const visited = new Set();
-    while (current) {
-      if (visited.has(current)) break;
-      visited.add(current);
-      pathNames.unshift(getTagName(current));
-      current = config.folders[current]?.parentId || null;
-    }
-    pathNames.push(name);
-    return pathNames.join("-");
-  }
-  // 创建新标签对象并加入系统
-  function createNewTagInSystem(name) {
-    const context = getContext();
-    const tags = context.tags;
-    const tag = {
-      id: context.uuidv4(),
-      name,
-      folder_type: "NONE",
-      filter_state: "UNDEFINED",
-      sort_order: Math.max(0, ...tags.map((t) => t.sort_order || 0)) + 1,
-      is_hidden_on_character_card: false,
-      color: "",
-      color2: "",
-      create_date: Date.now(),
-    };
-    tags.push(tag);
-    return tag;
-  }
-  // 重命名系统中的标签
-  function renameTagInSystem(tagId, newName) {
-    const tag = getTagList().find((t) => t.id === tagId);
-    if (tag) {
-      tag.name = newName;
-      getContext().saveSettingsDebounced();
-    }
-  }
-  // 根据当前父级重新构建标签名
-  function rebuildTagName(tagId) {
-    const folder = config.folders[tagId];
-    if (!folder || folder.isVirtual) return;
-    const shortName = folder.displayName || getFullTagName(tagId);
-    const parentId = folder.parentId;
-    let newTagName;
-    if (parentId && !isVirtualFolder(parentId)) {
-      newTagName = buildPrefixedTagName(shortName, parentId);
-    } else {
-      newTagName = shortName;
-    }
-    const tags = getContext().tags;
-    const conflict = tags.find(
-      (t) =>
-        t.id !== tagId && t.name.toLowerCase() === newTagName.toLowerCase(),
-    );
-    if (conflict) {
-      let counter = 2;
-      let finalName;
-      do {
-        finalName = `${newTagName}_${counter++}`;
-      } while (
-        tags.find(
-          (t) =>
-            t.id !== tagId && t.name.toLowerCase() === finalName.toLowerCase(),
-        )
-      );
-      newTagName = finalName;
-    }
-    renameTagInSystem(tagId, newTagName);
-  }
-  function recursiveRebuildTagNames(tagId) {
-    rebuildTagName(tagId);
-    const children = getChildFolders(tagId);
-    for (const childId of children) {
-      recursiveRebuildTagNames(childId);
-    }
-  }
-  // 查找或创建标签，自动处理重名冲突（子文件夹带路径前缀）
-  function findOrCreateTag(intendedName, parentTagId) {
-    const tags = getContext().tags;
-    if (parentTagId && !isVirtualFolder(parentTagId)) {
-      const prefixedName = buildPrefixedTagName(intendedName, parentTagId);
-      const prefixedTag = tags.find(
-        (t) => t.name.toLowerCase() === prefixedName.toLowerCase(),
-      );
-      if (prefixedTag) {
-        if (config.folders[prefixedTag.id]?.parentId === parentTagId) {
-          return { tag: prefixedTag, displayName: intendedName };
-        }
-        let counter = 2;
-        let finalName;
-        do {
-          finalName = `${prefixedName}_${counter++}`;
-        } while (
-          tags.find((t) => t.name.toLowerCase() === finalName.toLowerCase())
-        );
-        return {
-          tag: createNewTagInSystem(finalName),
-          displayName: intendedName,
-        };
-      }
-      return {
-        tag: createNewTagInSystem(prefixedName),
-        displayName: intendedName,
-      };
-    }
-    const existingTag = tags.find(
-      (t) => t.name.toLowerCase() === intendedName.toLowerCase(),
-    );
-    if (existingTag) {
-      if (config.folders[existingTag.id]) {
-        if (!config.folders[existingTag.id].parentId) {
-          return { tag: existingTag, displayName: null };
-        }
-        let counter = 2;
-        let finalName;
-        do {
-          finalName = `${intendedName}_${counter++}`;
-        } while (
-          tags.find((t) => t.name.toLowerCase() === finalName.toLowerCase())
-        );
-        return {
-          tag: createNewTagInSystem(finalName),
-          displayName: intendedName,
-        };
-      }
-      return { tag: existingTag, displayName: null };
-    }
-    return { tag: createNewTagInSystem(intendedName), displayName: null };
   }
   function getFolderTagIds() {
     return Object.keys(config.folders);
@@ -387,32 +222,11 @@ jQuery(async () => {
     const childFolderIds = getChildFolders(folderTagId);
     const characters = getCharacters();
     const tagMap = getTagMap();
-    const vMap = getVirtualCharMap();
-
-    if (isVirtualFolder(folderTagId)) {
-      const avatars = vMap[folderTagId] || [];
-      return characters.filter((char) => {
-        if (!avatars.includes(char.avatar)) return false;
-        for (const childId of childFolderIds) {
-          if (isVirtualFolder(childId)) {
-            if ((vMap[childId] || []).includes(char.avatar)) return false;
-          } else {
-            if ((tagMap[char.avatar] || []).includes(childId)) return false;
-          }
-        }
-        return true;
-      });
-    }
-
     return characters.filter((char) => {
       const charTags = tagMap[char.avatar] || [];
       if (!charTags.includes(folderTagId)) return false;
       for (const childId of childFolderIds) {
-        if (isVirtualFolder(childId)) {
-          if ((vMap[childId] || []).includes(char.avatar)) return false;
-        } else {
-          if (charTags.includes(childId)) return false;
-        }
+        if (charTags.includes(childId)) return false;
       }
       return true;
     });
@@ -422,17 +236,9 @@ jQuery(async () => {
     if (folderTagIds.length === 0) return getCharacters();
     const characters = getCharacters();
     const tagMap = getTagMap();
-    const vMap = getVirtualCharMap();
     return characters.filter((char) => {
       const charTags = tagMap[char.avatar] || [];
-      for (const fid of folderTagIds) {
-        if (isVirtualFolder(fid)) {
-          if ((vMap[fid] || []).includes(char.avatar)) return false;
-        } else {
-          if (charTags.includes(fid)) return false;
-        }
-      }
-      return true;
+      return !folderTagIds.some((fid) => charTags.includes(fid));
     });
   }
   function countCharsInFolderRecursive(folderTagId) {
@@ -495,74 +301,57 @@ jQuery(async () => {
       const dom = el instanceof jQuery ? el[0] : el;
       let sx, sy;
 
-      dom.addEventListener(
-        "touchstart",
-        (e) => {
-          if (mgr.active) return;
-          if (e.target.closest(".cfm-row-star, .cfm-tnode-arrow")) return;
-          const t = e.touches[0];
-          sx = t.clientX;
-          sy = t.clientY;
-          mgr._startX = sx;
-          mgr._startY = sy;
+      dom.addEventListener("touchstart", (e) => {
+        if (mgr.active) return;
+        if (e.target.closest(".cfm-row-star, .cfm-tnode-arrow")) return;
+        const t = e.touches[0];
+        sx = t.clientX; sy = t.clientY;
+        mgr._startX = sx; mgr._startY = sy;
 
-          mgr._timer = setTimeout(() => {
-            const data = getDataFn();
-            if (!data) return;
-            mgr.active = true;
-            mgr.data = data;
-            mgr.sourceEl = dom;
-            dom.classList.add("cfm-touch-dragging");
-            // 创建幽灵
-            const g = document.createElement("div");
-            g.className = "cfm-touch-ghost";
-            g.textContent =
-              (data.type === "folder" ? "📁 " : "👤 ") + (data.name || "");
-            g.style.left = sx + "px";
-            g.style.top = sy - 50 + "px";
-            document.body.appendChild(g);
-            mgr.ghost = g;
-            if (navigator.vibrate) navigator.vibrate(50);
-          }, 500);
-        },
-        { passive: true },
-      );
+        mgr._timer = setTimeout(() => {
+          const data = getDataFn();
+          if (!data) return;
+          mgr.active = true;
+          mgr.data = data;
+          mgr.sourceEl = dom;
+          dom.classList.add("cfm-touch-dragging");
+          // 创建幽灵
+          const g = document.createElement("div");
+          g.className = "cfm-touch-ghost";
+          g.textContent = (data.type === "folder" ? "📁 " : "👤 ") + (data.name || "");
+          g.style.left = sx + "px";
+          g.style.top = (sy - 50) + "px";
+          document.body.appendChild(g);
+          mgr.ghost = g;
+          if (navigator.vibrate) navigator.vibrate(50);
+        }, 500);
+      }, { passive: true });
 
-      dom.addEventListener(
-        "touchmove",
-        (e) => {
-          const t = e.touches[0];
-          const dx = Math.abs(t.clientX - sx);
-          const dy = Math.abs(t.clientY - sy);
-          // 未激活时，移动超过10px取消长按
-          if (!mgr.active) {
-            if (dx > 10 || dy > 10) {
-              mgr._cancelTimer();
-            }
-            return;
-          }
-          e.preventDefault(); // 阻止滚动
-          if (mgr.ghost) {
-            mgr.ghost.style.left = t.clientX + "px";
-            mgr.ghost.style.top = t.clientY - 50 + "px";
-          }
-          mgr._highlightTarget(t.clientX, t.clientY);
-        },
-        { passive: false },
-      );
+      dom.addEventListener("touchmove", (e) => {
+        const t = e.touches[0];
+        const dx = Math.abs(t.clientX - sx);
+        const dy = Math.abs(t.clientY - sy);
+        // 未激活时，移动超过10px取消长按
+        if (!mgr.active) {
+          if (dx > 10 || dy > 10) { mgr._cancelTimer(); }
+          return;
+        }
+        e.preventDefault(); // 阻止滚动
+        if (mgr.ghost) {
+          mgr.ghost.style.left = t.clientX + "px";
+          mgr.ghost.style.top = (t.clientY - 50) + "px";
+        }
+        mgr._highlightTarget(t.clientX, t.clientY);
+      }, { passive: false });
 
-      dom.addEventListener(
-        "touchend",
-        (e) => {
-          mgr._cancelTimer();
-          if (!mgr.active) return;
-          e.preventDefault();
-          const t = e.changedTouches[0];
-          mgr._executeDrop(t.clientX, t.clientY);
-          mgr._cleanup();
-        },
-        { passive: false },
-      );
+      dom.addEventListener("touchend", (e) => {
+        mgr._cancelTimer();
+        if (!mgr.active) return;
+        e.preventDefault();
+        const t = e.changedTouches[0];
+        mgr._executeDrop(t.clientX, t.clientY);
+        mgr._cleanup();
+      }, { passive: false });
 
       dom.addEventListener("touchcancel", () => {
         mgr._cancelTimer();
@@ -571,20 +360,14 @@ jQuery(async () => {
     },
 
     _cancelTimer() {
-      if (this._timer) {
-        clearTimeout(this._timer);
-        this._timer = null;
-      }
+      if (this._timer) { clearTimeout(this._timer); this._timer = null; }
     },
 
     _clearHighlight() {
       if (this._lastTarget) {
         this._lastTarget.classList.remove(
-          "cfm-drop-target",
-          "cfm-drop-before",
-          "cfm-drop-after",
-          "cfm-drop-forbidden",
-          "cfm-right-list-drop-target",
+          "cfm-drop-target", "cfm-drop-before", "cfm-drop-after",
+          "cfm-drop-forbidden", "cfm-right-list-drop-target"
         );
         this._lastTarget = null;
       }
@@ -603,9 +386,7 @@ jQuery(async () => {
       const rightList = el.closest(".cfm-right-list");
 
       let target = tnode || row || uncatNode;
-      if (!target && rightList) {
-        target = rightList;
-      }
+      if (!target && rightList) { target = rightList; }
       if (!target) return;
 
       const targetId = target.dataset?.id || target.dataset?.folderId;
@@ -622,22 +403,14 @@ jQuery(async () => {
       // 禁止检测
       if (this.data.type === "folder" && this.data.id === targetId) {
         target.classList.add("cfm-drop-forbidden");
-        this._lastTarget = target;
-        return;
+        this._lastTarget = target; return;
       }
-      if (
-        this.data.type === "folder" &&
-        zone === "into" &&
-        targetId &&
-        wouldCreateCycle(this.data.id, targetId)
-      ) {
+      if (this.data.type === "folder" && zone === "into" && targetId && wouldCreateCycle(this.data.id, targetId)) {
         target.classList.add("cfm-drop-forbidden");
-        this._lastTarget = target;
-        return;
+        this._lastTarget = target; return;
       }
 
-      if (target === rightList)
-        target.classList.add("cfm-right-list-drop-target");
+      if (target === rightList) target.classList.add("cfm-right-list-drop-target");
       else if (zone === "before") target.classList.add("cfm-drop-before");
       else if (zone === "after") target.classList.add("cfm-drop-after");
       else target.classList.add("cfm-drop-target");
@@ -671,97 +444,53 @@ jQuery(async () => {
         if (uncatNode) return;
         if (targetId && targetId !== d.id) {
           if (zone === "into") {
-            if (wouldCreateCycle(d.id, targetId)) {
-              toastr.error("此操作会产生循环嵌套，已阻止");
-              return;
-            }
+            if (wouldCreateCycle(d.id, targetId)) { toastr.error("此操作会产生循环嵌套，已阻止"); return; }
             reorderFolder(d.id, targetId, null);
-            toastr.success(
-              `「${getTagName(d.id)}」已移入「${getTagName(targetId)}」`,
-            );
+            toastr.success(`「${getTagName(d.id)}」已移入「${getTagName(targetId)}」`);
           } else {
             const pId = config.folders[targetId]?.parentId || null;
-            if (wouldCreateCycle(d.id, pId)) {
-              toastr.error("此操作会产生循环嵌套，已阻止");
-              return;
-            }
+            if (wouldCreateCycle(d.id, pId)) { toastr.error("此操作会产生循环嵌套，已阻止"); return; }
             if (zone === "before") {
               reorderFolder(d.id, pId, targetId);
-              toastr.success(
-                `「${getTagName(d.id)}」已排序到「${getTagName(targetId)}」前面`,
-              );
+              toastr.success(`「${getTagName(d.id)}」已排序到「${getTagName(targetId)}」前面`);
             } else {
               const sibs = sortFolders(getChildFolders(pId));
               const ci = sibs.indexOf(targetId);
               const nxt = ci >= 0 && ci < sibs.length - 1 ? sibs[ci + 1] : null;
               reorderFolder(d.id, pId, nxt);
-              toastr.success(
-                `「${getTagName(d.id)}」已排序到「${getTagName(targetId)}」后面`,
-              );
+              toastr.success(`「${getTagName(d.id)}」已排序到「${getTagName(targetId)}」后面`);
             }
           }
-          renderLeftTree();
-          renderRightPane();
-        } else if (
-          !target &&
-          rightList &&
-          selectedTreeNode &&
-          selectedTreeNode !== "__uncategorized__" &&
-          selectedTreeNode !== "__favorites__"
-        ) {
-          if (
-            d.id !== selectedTreeNode &&
-            !wouldCreateCycle(d.id, selectedTreeNode)
-          ) {
+          renderLeftTree(); renderRightPane();
+        } else if (!target && rightList && selectedTreeNode && selectedTreeNode !== "__uncategorized__" && selectedTreeNode !== "__favorites__") {
+          if (d.id !== selectedTreeNode && !wouldCreateCycle(d.id, selectedTreeNode)) {
             reorderFolder(d.id, selectedTreeNode, null);
-            toastr.success(
-              `「${getTagName(d.id)}」已移入「${getTagName(selectedTreeNode)}」`,
-            );
-            renderLeftTree();
-            renderRightPane();
+            toastr.success(`「${getTagName(d.id)}」已移入「${getTagName(selectedTreeNode)}」`);
+            renderLeftTree(); renderRightPane();
           }
         }
       } else if (d.type === "char") {
         if (uncatNode) {
           removeCharFromAllFolders(d.avatar);
           toastr.success(`已将「${d.name || d.avatar}」移出所有文件夹`);
-          renderLeftTree();
-          renderRightPane();
+          renderLeftTree(); renderRightPane();
         } else if (targetId) {
           handleCharDropToFolder(d.avatar, targetId, d.name || d.avatar);
-          renderLeftTree();
-          renderRightPane();
-        } else if (
-          !target &&
-          rightList &&
-          selectedTreeNode &&
-          selectedTreeNode !== "__uncategorized__" &&
-          selectedTreeNode !== "__favorites__"
-        ) {
-          handleCharDropToFolder(
-            d.avatar,
-            selectedTreeNode,
-            d.name || d.avatar,
-          );
-          renderLeftTree();
-          renderRightPane();
+          renderLeftTree(); renderRightPane();
+        } else if (!target && rightList && selectedTreeNode && selectedTreeNode !== "__uncategorized__" && selectedTreeNode !== "__favorites__") {
+          handleCharDropToFolder(d.avatar, selectedTreeNode, d.name || d.avatar);
+          renderLeftTree(); renderRightPane();
         }
       }
     },
 
     _cleanup() {
-      if (this.ghost) {
-        this.ghost.remove();
-        this.ghost = null;
-      }
-      if (this.sourceEl) {
-        this.sourceEl.classList.remove("cfm-touch-dragging");
-        this.sourceEl = null;
-      }
+      if (this.ghost) { this.ghost.remove(); this.ghost = null; }
+      if (this.sourceEl) { this.sourceEl.classList.remove("cfm-touch-dragging"); this.sourceEl = null; }
       this._clearHighlight();
       this.active = false;
       this.data = null;
-    },
+    }
   };
 
   // ==================== 排序功能 ====================
@@ -894,20 +623,16 @@ jQuery(async () => {
       overlay.remove();
       onRevert();
     });
+    overlay.on("click", (e) => {
+      if (e.target === overlay[0]) {
+        // 点击遮罩等同于"否"
+        overlay.remove();
+        onRevert();
+      }
+    });
   }
   // 移动文件夹到新父级并插入到指定位置
   function reorderFolder(folderId, newParentId, insertBeforeId) {
-    const oldParentId = config.folders[folderId]?.parentId || null;
-    // 确保非虚拟文件夹有 displayName（用于路径前缀重建）
-    if (!config.folders[folderId].displayName && !config.folders[folderId].isVirtual) {
-      const fullName = getFullTagName(folderId);
-      const lastDash = fullName.lastIndexOf("-");
-      if (lastDash >= 0 && oldParentId) {
-        config.folders[folderId].displayName = fullName.substring(lastDash + 1);
-      } else {
-        config.folders[folderId].displayName = fullName;
-      }
-    }
     config.folders[folderId].parentId = newParentId;
     const siblings = getChildFolders(newParentId);
     const others = sortFolders(siblings.filter((id) => id !== folderId));
@@ -921,77 +646,33 @@ jQuery(async () => {
       config.folders[id].sortOrder = i + 1;
     });
     saveConfig(config);
-    // 父级变化时，递归重建标签名（路径前缀）
-    if (oldParentId !== newParentId && !config.folders[folderId]?.isVirtual) {
-      recursiveRebuildTagNames(folderId);
-    }
   }
 
-  // 移动角色到新文件夹（移除所有旧文件夹标签/虚拟映射，只添加目标）
+  // 移动角色到新文件夹（移除所有旧文件夹标签，只添加目标标签）
   function moveCharToFolder(avatar, newFolderId) {
-    const allFolderIds = getFolderTagIds();
     const tagMap = getTagMap();
     const charTags = tagMap[avatar] || [];
-    const vMap = getVirtualCharMap();
-
-    // 从所有标签型文件夹中移除
+    const allFolderIds = getFolderTagIds();
     for (let i = charTags.length - 1; i >= 0; i--) {
-      if (allFolderIds.includes(charTags[i]) && !isVirtualFolder(charTags[i])) {
-        charTags.splice(i, 1);
-      }
+      if (allFolderIds.includes(charTags[i])) charTags.splice(i, 1);
     }
+    if (!charTags.includes(newFolderId)) charTags.push(newFolderId);
     tagMap[avatar] = charTags;
-
-    // 从所有虚拟文件夹中移除
-    for (const fid of allFolderIds) {
-      if (isVirtualFolder(fid) && vMap[fid]) {
-        const idx = vMap[fid].indexOf(avatar);
-        if (idx >= 0) vMap[fid].splice(idx, 1);
-      }
-    }
-
-    // 添加到新文件夹
-    if (isVirtualFolder(newFolderId)) {
-      if (!vMap[newFolderId]) vMap[newFolderId] = [];
-      if (!vMap[newFolderId].includes(avatar)) vMap[newFolderId].push(avatar);
-      saveVirtualCharMap(vMap);
-    } else {
-      if (!charTags.includes(newFolderId)) charTags.push(newFolderId);
-    }
     getContext().saveSettingsDebounced();
   }
-  // 复制角色到新文件夹（保留旧标签，额外添加目标）
+  // 复制角色到新文件夹（保留旧标签，额外添加目标标签）
   function copyCharToFolder(avatar, newFolderId) {
-    if (isVirtualFolder(newFolderId)) {
-      const vMap = getVirtualCharMap();
-      if (!vMap[newFolderId]) vMap[newFolderId] = [];
-      if (!vMap[newFolderId].includes(avatar)) vMap[newFolderId].push(avatar);
-      saveVirtualCharMap(vMap);
-    } else {
-      addTagToChar(avatar, newFolderId);
-    }
+    addTagToChar(avatar, newFolderId);
   }
   // 将角色移出所有文件夹（变为未归类）
   function removeCharFromAllFolders(avatar) {
     const tagMap = getTagMap();
     const charTags = tagMap[avatar] || [];
     const allFolderIds = getFolderTagIds();
-    // 从标签型文件夹中移除
     for (let i = charTags.length - 1; i >= 0; i--) {
-      if (allFolderIds.includes(charTags[i]) && !isVirtualFolder(charTags[i])) {
-        charTags.splice(i, 1);
-      }
+      if (allFolderIds.includes(charTags[i])) charTags.splice(i, 1);
     }
     tagMap[avatar] = charTags;
-    // 从虚拟文件夹中移除
-    const vMap = getVirtualCharMap();
-    for (const fid of allFolderIds) {
-      if (isVirtualFolder(fid) && vMap[fid]) {
-        const idx = vMap[fid].indexOf(avatar);
-        if (idx >= 0) vMap[fid].splice(idx, 1);
-      }
-    }
-    saveVirtualCharMap(vMap);
     getContext().saveSettingsDebounced();
   }
   // 处理角色拖放到文件夹（根据复制模式决定行为）
@@ -1004,7 +685,7 @@ jQuery(async () => {
       toastr.success(`已将「${charName}」移动到「${getTagName(folderId)}」`);
     }
   }
-  // 自动清理多余的路径标签（只保留最深层的叶子标签，跳过虚拟文件夹）
+  // 自动清理多余的路径标签（只保留最深层的叶子标签）
   function autoCleanRedundantTags() {
     const characters = getCharacters();
     const tagMap = getTagMap();
@@ -1012,9 +693,7 @@ jQuery(async () => {
     let cleanedCount = 0;
     for (const char of characters) {
       const charTags = tagMap[char.avatar] || [];
-      const folderTags = charTags.filter(
-        (t) => allFolderIdSet.has(t) && !isVirtualFolder(t),
-      );
+      const folderTags = charTags.filter((t) => allFolderIdSet.has(t));
       if (folderTags.length <= 1) continue;
       const toRemove = new Set();
       for (const fid of folderTags) {
@@ -1052,11 +731,7 @@ jQuery(async () => {
     const tagMap = getTagMap();
     const charTags = tagMap[avatar] || [];
     const folderIds = getFolderTagIds();
-    const vMap = getVirtualCharMap();
-    const charFolderTags = folderIds.filter((fid) => {
-      if (isVirtualFolder(fid)) return (vMap[fid] || []).includes(avatar);
-      return charTags.includes(fid);
-    });
+    const charFolderTags = charTags.filter((t) => folderIds.includes(t));
     if (charFolderTags.length === 0) return null;
     let deepest = charFolderTags[0];
     let maxDepth = getFolderPath(deepest).length;
@@ -1181,131 +856,63 @@ jQuery(async () => {
     });
     $(document).on("mousemove.cfmDrag", (e) => {
       if (!isDragging) return;
-      if (
-        Math.abs(e.pageX - startPos.x) > 5 ||
-        Math.abs(e.pageY - startPos.y) > 5
-      )
-        hasMoved = true;
-      if (hasMoved)
-        btn.css({
-          top: e.pageY - offset.y + "px",
-          left: e.pageX - offset.x + "px",
-          right: "auto",
-          bottom: "auto",
-        });
+      if (Math.abs(e.pageX - startPos.x) > 5 || Math.abs(e.pageY - startPos.y) > 5) hasMoved = true;
+      if (hasMoved) btn.css({ top: (e.pageY - offset.y) + "px", left: (e.pageX - offset.x) + "px", right: "auto", bottom: "auto" });
     });
     $(document).on("mouseup.cfmDrag", () => {
       if (!isDragging) return;
       isDragging = false;
       btn.css("cursor", "grab");
-      if (hasMoved)
-        localStorage.setItem(
-          STORAGE_KEY_BTN_POS,
-          JSON.stringify({ top: btn.css("top"), left: btn.css("left") }),
-        );
-      setTimeout(() => {
-        hasMoved = false;
-      }, 50);
+      if (hasMoved) localStorage.setItem(STORAGE_KEY_BTN_POS, JSON.stringify({ top: btn.css("top"), left: btn.css("left") }));
+      setTimeout(() => { hasMoved = false; }, 50);
     });
-    btn.on("click", (e) => {
-      if (hasMoved) {
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-      showMainPopup();
-    });
+    btn.on("click", (e) => { if (hasMoved) { e.preventDefault(); e.stopPropagation(); return; } showMainPopup(); });
 
     // 移动端：触摸长按拖拽（使用原生事件 + passive:false）
     const btnEl = btn[0];
     let tSx, tSy;
-    btnEl.addEventListener(
-      "touchstart",
-      (e) => {
-        hasMoved = false;
-        longPressTriggered = false;
-        const t = e.touches[0];
-        tSx = t.clientX;
-        tSy = t.clientY;
-        const pos = btn.offset();
-        offset.x = t.pageX - pos.left;
-        offset.y = t.pageY - pos.top;
-        longPressTimer = setTimeout(() => {
-          longPressTriggered = true;
-          isDragging = true;
-          btn.addClass("cfm-long-press-ready");
-          if (navigator.vibrate) navigator.vibrate(50);
-        }, 500);
-      },
-      { passive: true },
-    );
+    btnEl.addEventListener("touchstart", (e) => {
+      hasMoved = false; longPressTriggered = false;
+      const t = e.touches[0];
+      tSx = t.clientX; tSy = t.clientY;
+      const pos = btn.offset();
+      offset.x = t.pageX - pos.left;
+      offset.y = t.pageY - pos.top;
+      longPressTimer = setTimeout(() => {
+        longPressTriggered = true; isDragging = true;
+        btn.addClass("cfm-long-press-ready");
+        if (navigator.vibrate) navigator.vibrate(50);
+      }, 500);
+    }, { passive: true });
 
-    btnEl.addEventListener(
-      "touchmove",
-      (e) => {
-        const t = e.touches[0];
-        if (!isDragging) {
-          if (
-            Math.abs(t.clientX - tSx) > 10 ||
-            Math.abs(t.clientY - tSy) > 10
-          ) {
-            if (longPressTimer) {
-              clearTimeout(longPressTimer);
-              longPressTimer = null;
-            }
-          }
-          return;
+    btnEl.addEventListener("touchmove", (e) => {
+      const t = e.touches[0];
+      if (!isDragging) {
+        if (Math.abs(t.clientX - tSx) > 10 || Math.abs(t.clientY - tSy) > 10) {
+          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
         }
-        e.preventDefault();
-        hasMoved = true;
-        btn.css({
-          top: t.pageY - offset.y + "px",
-          left: t.pageX - offset.x + "px",
-          right: "auto",
-          bottom: "auto",
-        });
-      },
-      { passive: false },
-    );
-
-    btnEl.addEventListener(
-      "touchend",
-      (e) => {
-        if (longPressTimer) {
-          clearTimeout(longPressTimer);
-          longPressTimer = null;
-        }
-        if (!isDragging && !longPressTriggered) {
-          e.preventDefault();
-          showMainPopup();
-          return;
-        }
-        if (isDragging) {
-          isDragging = false;
-          btn.removeClass("cfm-long-press-ready");
-          if (hasMoved)
-            localStorage.setItem(
-              STORAGE_KEY_BTN_POS,
-              JSON.stringify({ top: btn.css("top"), left: btn.css("left") }),
-            );
-        }
-        hasMoved = false;
-        longPressTriggered = false;
-      },
-      { passive: false },
-    );
-
-    btnEl.addEventListener("touchcancel", () => {
-      if (longPressTimer) {
-        clearTimeout(longPressTimer);
-        longPressTimer = null;
+        return;
       }
+      e.preventDefault();
+      hasMoved = true;
+      btn.css({ top: (t.pageY - offset.y) + "px", left: (t.pageX - offset.x) + "px", right: "auto", bottom: "auto" });
+    }, { passive: false });
+
+    btnEl.addEventListener("touchend", (e) => {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+      if (!isDragging && !longPressTriggered) { e.preventDefault(); showMainPopup(); return; }
       if (isDragging) {
         isDragging = false;
         btn.removeClass("cfm-long-press-ready");
+        if (hasMoved) localStorage.setItem(STORAGE_KEY_BTN_POS, JSON.stringify({ top: btn.css("top"), left: btn.css("left") }));
       }
-      hasMoved = false;
-      longPressTriggered = false;
+      hasMoved = false; longPressTriggered = false;
+    }, { passive: false });
+
+    btnEl.addEventListener("touchcancel", () => {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+      if (isDragging) { isDragging = false; btn.removeClass("cfm-long-press-ready"); }
+      hasMoved = false; longPressTriggered = false;
     });
 
     let resizeTimer;
@@ -1391,6 +998,9 @@ jQuery(async () => {
     overlay.append(popup);
     $("body").append(overlay);
 
+    overlay.on("click", (e) => {
+      if (e.target === overlay[0]) closeMainPopup();
+    });
     popup.find("#cfm-btn-close-main").on("click touchend", (e) => {
       e.preventDefault();
       closeMainPopup();
@@ -1745,11 +1355,7 @@ jQuery(async () => {
     });
 
     // 移动端触摸拖拽
-    touchDragMgr.bind(node, () => ({
-      type: "folder",
-      id: folderId,
-      name: getTagName(folderId),
-    }));
+    touchDragMgr.bind(node, () => ({ type: "folder", id: folderId, name: getTagName(folderId) }));
 
     // PC端拖拽
     node.on("dragstart", (e) => {
@@ -2232,11 +1838,7 @@ jQuery(async () => {
       }
     });
     // 移动端触摸拖拽
-    touchDragMgr.bind(row, () => ({
-      type: "char",
-      avatar: char.avatar,
-      name: char.name,
-    }));
+    touchDragMgr.bind(row, () => ({ type: "char", avatar: char.avatar, name: char.name }));
 
     // PC端拖拽
     row.on("dragstart", (e) => {
@@ -2281,6 +1883,9 @@ jQuery(async () => {
         `);
     overlay.append(popup);
     $("body").append(overlay);
+    overlay.on("click", (e) => {
+      if (e.target === overlay[0]) closeConfigPopup();
+    });
     popup.find("#cfm-btn-close-config").on("click touchend", (e) => {
       e.preventDefault();
       closeConfigPopup();
@@ -2336,14 +1941,6 @@ jQuery(async () => {
                     <button id="cfm-import-all-btn" class="cfm-btn" style="background:rgba(87,242,135,0.15);color:#57f287;border-color:rgba(87,242,135,0.4);"><i class="fa-solid fa-download"></i> 一键导入所有标签 <span style="opacity:0.6;font-size:11px;">(${availableTags.length} 个可导入)</span></button>
                 </div>
                 <div class="cfm-create-tag-hint">将酒馆中所有尚未注册为文件夹的标签一次性导入。新标签会在每次打开插件时自动检测并导入。</div>
-                <div style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;background:rgba(88,101,242,0.08);border-radius:6px;border:1px solid rgba(88,101,242,0.2);">
-                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;margin:0;">
-                        <input type="checkbox" id="cfm-sync-tags-checkbox" ${getSyncTags() ? "checked" : ""} style="width:16px;height:16px;cursor:pointer;">
-                        <span>创建文件夹时同步创建标签</span>
-                    </label>
-                    <span style="font-size:11px;opacity:0.5;margin-left:auto;">${getSyncTags() ? "✓ 同步模式" : "✗ 虚拟模式"}</span>
-                </div>
-                <div class="cfm-create-tag-hint" style="margin-top:4px;">勾选时，新建文件夹会同时创建酒馆标签（默认行为）。取消勾选则仅创建虚拟文件夹，不影响酒馆标签系统。</div>
                 <details style="margin-top:8px;">
                     <summary style="cursor:pointer;font-size:12px;opacity:0.6;">▸ 手动添加单个标签</summary>
                     <div class="cfm-add-folder-row" style="margin-top:8px;">
@@ -2358,11 +1955,6 @@ jQuery(async () => {
       select.append(
         `<option value="${tag.id}">${escapeHtml(tag.name)}</option>`,
       );
-    addSection.find("#cfm-sync-tags-checkbox").on("change", function () {
-      const checked = $(this).is(":checked");
-      setSyncTags(checked);
-      renderConfigBody();
-    });
     addSection.find("#cfm-import-all-btn").on("click touchend", (e) => {
       e.preventDefault();
       const imported = oneClickImportAllTags();
@@ -2450,15 +2042,55 @@ jQuery(async () => {
     });
     body.append(batchSection);
 
-    // 删除模式下在树上方显示操作栏
+    // 2. 当前文件夹树形展示（支持拖拽 + 点击选中）
+    const treeSection = $(`
+            <div class="cfm-config-section">
+                <label>当前文件夹结构 <span class="cfm-drag-hint">拖拽调整层级 · 点击选中为目标父级</span></label>
+                <div class="cfm-tree" id="cfm-folder-tree"></div>
+            </div>
+        `);
+    body.append(treeSection);
+    const treeContainer = treeSection.find("#cfm-folder-tree");
+
+    if (configSelectedFolderId) {
+      const selectedHint = $(
+        `<div class="cfm-selected-hint"><i class="fa-solid fa-crosshairs"></i> 已选中：<strong>${escapeHtml(getTagName(configSelectedFolderId))}</strong><button class="cfm-btn-deselect" title="取消选中"><i class="fa-solid fa-xmark"></i></button></div>`,
+      );
+      selectedHint.find(".cfm-btn-deselect").on("click touchend", (e) => {
+        e.preventDefault();
+        configSelectedFolderId = null;
+        renderConfigBody();
+      });
+      treeContainer.append(selectedHint);
+    }
+
+    const topFoldersConfig = sortFolders(getTopLevelFolders());
+    if (topFoldersConfig.length === 0) {
+      treeContainer.append(
+        '<div class="cfm-empty" style="padding:16px;">还没有配置任何文件夹</div>',
+      );
+    } else {
+      for (const folderId of topFoldersConfig)
+        renderConfigTreeItem(treeContainer, folderId, 0);
+    }
+
+    // 删除模式下显示操作栏
     if (cfmDeleteMode) {
       const allFolderIds = getFolderTagIds();
       const allSelected =
         allFolderIds.length > 0 &&
         allFolderIds.every((id) => cfmDeleteSelected.has(id));
 
+      // 计算反选范围描述
+      let invertScopeLabel = "全部文件夹";
+      if (cfmInvertScope === "parent") {
+        invertScopeLabel = configSelectedFolderId
+          ? `「${getTagName(configSelectedFolderId)}」的子级`
+          : "顶级文件夹";
+      }
+
       const deleteBar = $(`
-                <div class="cfm-config-section cfm-delete-bar cfm-delete-bar-controls">
+                <div class="cfm-delete-bar cfm-delete-bar-controls">
                     <div class="cfm-delete-bar-top">
                         <div class="cfm-delete-bar-left">
                             <button class="cfm-btn cfm-btn-sm" id="cfm-select-all" title="全选/全不选"><i class="fa-solid fa-${allSelected ? "square-minus" : "square-check"}"></i> ${allSelected ? "全不选" : "全选"}</button>
@@ -2496,7 +2128,7 @@ jQuery(async () => {
       deleteBar.find("#cfm-range-toggle").on("click touchend", (e) => {
         e.preventDefault();
         cfmDeleteRangeMode = !cfmDeleteRangeMode;
-        if (cfmDeleteRangeMode) cfmDeleteLastClickedId = null;
+        if (cfmDeleteRangeMode) cfmDeleteLastClickedId = null; // 重置起点
         renderConfigBody();
       });
       deleteBar.find("#cfm-invert-scope").on("change", function (e) {
@@ -2511,39 +2143,7 @@ jQuery(async () => {
         e.preventDefault();
         executeMultiDelete();
       });
-      body.append(deleteBar);
-    }
-
-    // 2. 当前文件夹树形展示（支持拖拽 + 点击选中）
-    const treeSection = $(`
-            <div class="cfm-config-section">
-                <label>当前文件夹结构 <span class="cfm-drag-hint">拖拽调整层级 · 点击选中为目标父级</span></label>
-                <div class="cfm-tree" id="cfm-folder-tree"></div>
-            </div>
-        `);
-    body.append(treeSection);
-    const treeContainer = treeSection.find("#cfm-folder-tree");
-
-    if (configSelectedFolderId) {
-      const selectedHint = $(
-        `<div class="cfm-selected-hint"><i class="fa-solid fa-crosshairs"></i> 已选中：<strong>${escapeHtml(getTagName(configSelectedFolderId))}</strong><button class="cfm-btn-deselect" title="取消选中"><i class="fa-solid fa-xmark"></i></button></div>`,
-      );
-      selectedHint.find(".cfm-btn-deselect").on("click touchend", (e) => {
-        e.preventDefault();
-        configSelectedFolderId = null;
-        renderConfigBody();
-      });
-      treeContainer.append(selectedHint);
-    }
-
-    const topFoldersConfig = sortFolders(getTopLevelFolders());
-    if (topFoldersConfig.length === 0) {
-      treeContainer.append(
-        '<div class="cfm-empty" style="padding:16px;">还没有配置任何文件夹</div>',
-      );
-    } else {
-      for (const folderId of topFoldersConfig)
-        renderConfigTreeItem(treeContainer, folderId, 0);
+      treeContainer.append(deleteBar);
     }
 
     // 根目录拖放区域
@@ -2564,21 +2164,8 @@ jQuery(async () => {
       rootDropzone.removeClass("cfm-drag-over");
       if (!draggedFolderId || !config.folders[draggedFolderId]?.parentId)
         return;
-      // 确保有 displayName（用于路径前缀重建）
-      if (!config.folders[draggedFolderId].displayName && !config.folders[draggedFolderId].isVirtual) {
-        const fullName = getFullTagName(draggedFolderId);
-        const lastDash = fullName.lastIndexOf("-");
-        if (lastDash >= 0) {
-          config.folders[draggedFolderId].displayName = fullName.substring(lastDash + 1);
-        } else {
-          config.folders[draggedFolderId].displayName = fullName;
-        }
-      }
       config.folders[draggedFolderId].parentId = null;
       saveConfig(config);
-      if (!config.folders[draggedFolderId]?.isVirtual) {
-        recursiveRebuildTagNames(draggedFolderId);
-      }
       toastr.success(`「${getTagName(draggedFolderId)}」已设为顶级文件夹`);
       draggedFolderId = null;
       renderConfigBody();
@@ -2597,15 +2184,11 @@ jQuery(async () => {
     }
 
     const isNewTag = isNewlyImported(folderId);
-    const isVirtual = isVirtualFolder(folderId);
-    const virtualBadge = isVirtual
-      ? ' <span class="cfm-virtual-badge">虚拟</span>'
-      : "";
     const item = $(`
-            <div class="cfm-tree-item ${isSelected ? "cfm-tree-selected" : ""} ${isNewTag ? "cfm-tree-new" : ""} ${isVirtual ? "cfm-tree-virtual" : ""}" draggable="${cfmDeleteMode ? "false" : "true"}" data-folder-id="${folderId}" style="padding-left:${10 + indent}px;">
+            <div class="cfm-tree-item ${isSelected ? "cfm-tree-selected" : ""} ${isNewTag ? "cfm-tree-new" : ""}" draggable="${cfmDeleteMode ? "false" : "true"}" data-folder-id="${folderId}" style="padding-left:${10 + indent}px;">
                 ${checkboxHtml}
-                <span class="cfm-tree-icon"><i class="fa-solid fa-grip-vertical" style="margin-right:4px;opacity:0.4;font-size:11px;"></i><i class="fa-solid fa-folder${isSelected ? "-open" : ""}${isVirtual ? "" : ""}" ${isVirtual ? 'style="opacity:0.6;"' : ""}></i></span>
-                <span class="cfm-tree-name">${escapeHtml(name)}${isNewTag ? ' <span class="cfm-new-badge">新</span>' : ""}${virtualBadge}</span>
+                <span class="cfm-tree-icon"><i class="fa-solid fa-grip-vertical" style="margin-right:4px;opacity:0.4;font-size:11px;"></i><i class="fa-solid fa-folder${isSelected ? "-open" : ""}"></i></span>
+                <span class="cfm-tree-name">${escapeHtml(name)}${isNewTag ? ' <span class="cfm-new-badge">新</span>' : ""}</span>
                 ${cfmDeleteMode ? "" : '<span class="cfm-tree-actions"><button class="cfm-btn-danger cfm-remove-folder" data-id="' + folderId + '" title="移除此文件夹"><i class="fa-solid fa-trash-can"></i></button></span>'}
             </div>
         `);
@@ -2732,23 +2315,8 @@ jQuery(async () => {
         toastr.error("此操作会产生循环嵌套，已阻止");
         return;
       }
-      // 确保有 displayName（用于路径前缀重建）
-      if (!config.folders[draggedFolderId].displayName && !config.folders[draggedFolderId].isVirtual) {
-        const fullName = getFullTagName(draggedFolderId);
-        const oldParent = config.folders[draggedFolderId].parentId;
-        const lastDash = fullName.lastIndexOf("-");
-        if (lastDash >= 0 && oldParent) {
-          config.folders[draggedFolderId].displayName = fullName.substring(lastDash + 1);
-        } else {
-          config.folders[draggedFolderId].displayName = fullName;
-        }
-      }
-      const oldParentId = config.folders[draggedFolderId].parentId;
       config.folders[draggedFolderId].parentId = folderId;
       saveConfig(config);
-      if (oldParentId !== folderId && !config.folders[draggedFolderId]?.isVirtual) {
-        recursiveRebuildTagNames(draggedFolderId);
-      }
       toastr.success(`「${getTagName(draggedFolderId)}」已移入「${name}」`);
       draggedFolderId = null;
       renderConfigBody();
@@ -2814,48 +2382,16 @@ jQuery(async () => {
         ? names.slice(0, 5).join("、") + `…等 ${names.length} 个`
         : names.join("、");
 
-    // 检查是否全部都是虚拟文件夹（虚拟文件夹没有标签可删）
-    const allVirtual = folderIds.every((id) => isVirtualFolder(id));
-    const hasRealFolders = folderIds.some((id) => !isVirtualFolder(id));
-    const virtualCount = folderIds.filter((id) => isVirtualFolder(id)).length;
-    const realCount = folderIds.length - virtualCount;
-
     const overlay = $(
       '<div id="cfm-delete-confirm-overlay" class="cfm-batch-overlay"></div>',
     );
-
-    let dialogHtml;
-    if (allVirtual) {
-      // 全部是虚拟文件夹，不需要询问标签删除
-      dialogHtml = `
-            <div class="cfm-batch-popup" style="max-width:480px;max-height:320px;">
-                <div class="cfm-config-header"><h3>⚠️ 确认删除</h3><button class="cfm-btn-close" id="cfm-dc-close">&times;</button></div>
-                <div style="padding:16px;">
-                    <div style="margin-bottom:12px;font-size:13px;line-height:1.6;">
-                        即将删除 <strong>${folderIds.length}</strong> 个虚拟文件夹：<br>
-                        <span style="color:#f9e2af;">${escapeHtml(namesPreview)}</span>
-                    </div>
-                    <div style="margin-bottom:16px;font-size:13px;color:#a6adc8;">
-                        虚拟文件夹没有关联的酒馆标签，删除后其中的角色将变为未归类。
-                    </div>
-                    <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
-                        <button id="cfm-dc-cancel" class="cfm-btn" style="opacity:0.7;">取消</button>
-                        <button id="cfm-dc-folder-only" class="cfm-btn cfm-btn-danger" style="background:rgba(237,66,69,0.2);border-color:rgba(237,66,69,0.5);">确认删除</button>
-                    </div>
-                </div>
-            </div>`;
-    } else {
-      const mixedHint =
-        virtualCount > 0
-          ? `<br><span style="font-size:12px;opacity:0.7;">其中 ${virtualCount} 个为虚拟文件夹（无标签），${realCount} 个关联了酒馆标签。</span>`
-          : "";
-      dialogHtml = `
+    const dialog = $(`
             <div class="cfm-batch-popup" style="max-width:480px;max-height:320px;">
                 <div class="cfm-config-header"><h3>⚠️ 确认删除</h3><button class="cfm-btn-close" id="cfm-dc-close">&times;</button></div>
                 <div style="padding:16px;">
                     <div style="margin-bottom:12px;font-size:13px;line-height:1.6;">
                         即将删除 <strong>${folderIds.length}</strong> 个文件夹：<br>
-                        <span style="color:#f9e2af;">${escapeHtml(namesPreview)}</span>${mixedHint}
+                        <span style="color:#f9e2af;">${escapeHtml(namesPreview)}</span>
                     </div>
                     <div style="margin-bottom:16px;font-size:13px;color:#a6adc8;">
                         是否同时从酒馆系统中删除对应的标签？<br>
@@ -2867,12 +2403,13 @@ jQuery(async () => {
                         <button id="cfm-dc-with-tags" class="cfm-btn cfm-btn-danger" style="background:rgba(237,66,69,0.2);border-color:rgba(237,66,69,0.5);">同时删除标签</button>
                     </div>
                 </div>
-            </div>`;
-    }
-
-    const dialog = $(dialogHtml);
+            </div>
+        `);
     overlay.append(dialog);
     $("body").append(overlay);
+    overlay.on("click", (e) => {
+      if (e.target === overlay[0]) overlay.remove();
+    });
     dialog.find("#cfm-dc-close, #cfm-dc-cancel").on("click touchend", (e) => {
       e.preventDefault();
       overlay.remove();
@@ -2904,7 +2441,6 @@ jQuery(async () => {
         .filter((id) => toDelete.has(id))
         .reverse();
 
-      const vMap = getVirtualCharMap();
       for (const folderId of sortedToDelete) {
         if (!config.folders[folderId]) continue;
         const parentId = config.folders[folderId].parentId || null;
@@ -2916,17 +2452,13 @@ jQuery(async () => {
           }
         }
         deletedNames.push(getTagName(folderId));
-        // 清理虚拟文件夹的角色映射
-        if (isVirtualFolder(folderId)) {
-          delete vMap[folderId];
-        } else if (alsoDeleteTags) {
-          // 仅对非虚拟文件夹删除标签
+        // 如果同时删除标签
+        if (alsoDeleteTags) {
           deleteTagFromSystem(folderId);
         }
         delete config.folders[folderId];
         if (configSelectedFolderId === folderId) configSelectedFolderId = null;
       }
-      saveVirtualCharMap(vMap);
       saveConfig(config);
       if (alsoDeleteTags) getContext().saveSettingsDebounced();
       cfmDeleteSelected.clear();
@@ -2950,42 +2482,37 @@ jQuery(async () => {
       return;
     }
     const context = getContext();
-    const syncTags = getSyncTags();
+    const tags = context.tags;
     const uuidv4 = context.uuidv4;
     const created = [];
-
-    if (syncTags) {
-      for (const name of names) {
-        const { tag, displayName } = findOrCreateTag(
+    for (const name of names) {
+      let tag = tags.find((t) => t.name.toLowerCase() === name.toLowerCase());
+      if (!tag) {
+        tag = {
+          id: uuidv4(),
           name,
-          parentFolderId || null,
-        );
-        if (!config.folders[tag.id]) {
-          config.folders[tag.id] = { parentId: parentFolderId || null };
-          if (displayName) config.folders[tag.id].displayName = displayName;
-        }
-        created.push(displayName || name);
-      }
-    } else {
-      for (const name of names) {
-        const id = uuidv4();
-        config.folders[id] = {
-          parentId: parentFolderId || null,
-          isVirtual: true,
-          name: name,
+          folder_type: "NONE",
+          filter_state: "UNDEFINED",
+          sort_order: Math.max(0, ...tags.map((t) => t.sort_order || 0)) + 1,
+          is_hidden_on_character_card: false,
+          color: "",
+          color2: "",
+          create_date: Date.now(),
         };
-        created.push(name);
+        tags.push(tag);
       }
+      if (!config.folders[tag.id]) {
+        config.folders[tag.id] = { parentId: parentFolderId || null };
+      }
+      created.push(tag.name);
     }
-
     saveConfig(config);
     context.saveSettingsDebounced();
     const parentHint = parentFolderId
       ? `「${getTagName(parentFolderId)}」下`
       : "顶级";
-    const typeHint = syncTags ? "文件夹和标签" : "虚拟文件夹";
     toastr.success(
-      `已创建 ${created.length} 个${parentHint}${typeHint}: ${created.join(", ")}`,
+      `已创建 ${created.length} 个${parentHint}文件夹: ${created.join(", ")}`,
     );
   }
 
@@ -3017,6 +2544,9 @@ jQuery(async () => {
         `);
     overlay.append(popup);
     $("body").append(overlay);
+    overlay.on("click", (e) => {
+      if (e.target === overlay[0]) overlay.remove();
+    });
     popup.find("#cfm-batch-close").on("click touchend", (e) => {
       e.preventDefault();
       overlay.remove();
@@ -3131,39 +2661,37 @@ jQuery(async () => {
 
   function executeBatchCreate(nodes, parentId) {
     const context = getContext();
-    const syncTags = getSyncTags();
+    const tags = context.tags;
     const uuidv4 = context.uuidv4;
     let count = 0;
-
-    if (syncTags) {
-      function processNodeTag(node, parentTagId) {
-        const { tag, displayName } = findOrCreateTag(node.name, parentTagId);
-        if (!config.folders[tag.id]) {
-          config.folders[tag.id] = { parentId: parentTagId };
-          if (displayName) config.folders[tag.id].displayName = displayName;
-          count++;
-        }
-        for (const child of node.children) processNodeTag(child, tag.id);
-      }
-      for (const node of nodes) processNodeTag(node, parentId);
-    } else {
-      function processNodeVirtual(node, parentVirtualId) {
-        const id = uuidv4();
-        config.folders[id] = {
-          parentId: parentVirtualId,
-          isVirtual: true,
+    function processNode(node, parentTagId) {
+      let tag = tags.find(
+        (t) => t.name.toLowerCase() === node.name.toLowerCase(),
+      );
+      if (!tag) {
+        tag = {
+          id: uuidv4(),
           name: node.name,
+          folder_type: "NONE",
+          filter_state: "UNDEFINED",
+          sort_order: Math.max(0, ...tags.map((t) => t.sort_order || 0)) + 1,
+          is_hidden_on_character_card: false,
+          color: "",
+          color2: "",
+          create_date: Date.now(),
         };
-        count++;
-        for (const child of node.children) processNodeVirtual(child, id);
+        tags.push(tag);
       }
-      for (const node of nodes) processNodeVirtual(node, parentId);
+      if (!config.folders[tag.id]) {
+        config.folders[tag.id] = { parentId: parentTagId };
+        count++;
+      }
+      for (const child of node.children) processNode(child, tag.id);
     }
-
+    for (const node of nodes) processNode(node, parentId);
     saveConfig(config);
     context.saveSettingsDebounced();
-    const typeHint = syncTags ? "文件夹和标签" : "虚拟文件夹";
-    toastr.success(`批量创建完成，共新增 ${count} 个${typeHint}`);
+    toastr.success(`批量创建完成，共新增 ${count} 个文件夹`);
   }
 
   // ==================== 初始化 ====================
