@@ -2450,55 +2450,15 @@ jQuery(async () => {
     });
     body.append(batchSection);
 
-    // 2. 当前文件夹树形展示（支持拖拽 + 点击选中）
-    const treeSection = $(`
-            <div class="cfm-config-section">
-                <label>当前文件夹结构 <span class="cfm-drag-hint">拖拽调整层级 · 点击选中为目标父级</span></label>
-                <div class="cfm-tree" id="cfm-folder-tree"></div>
-            </div>
-        `);
-    body.append(treeSection);
-    const treeContainer = treeSection.find("#cfm-folder-tree");
-
-    if (configSelectedFolderId) {
-      const selectedHint = $(
-        `<div class="cfm-selected-hint"><i class="fa-solid fa-crosshairs"></i> 已选中：<strong>${escapeHtml(getTagName(configSelectedFolderId))}</strong><button class="cfm-btn-deselect" title="取消选中"><i class="fa-solid fa-xmark"></i></button></div>`,
-      );
-      selectedHint.find(".cfm-btn-deselect").on("click touchend", (e) => {
-        e.preventDefault();
-        configSelectedFolderId = null;
-        renderConfigBody();
-      });
-      treeContainer.append(selectedHint);
-    }
-
-    const topFoldersConfig = sortFolders(getTopLevelFolders());
-    if (topFoldersConfig.length === 0) {
-      treeContainer.append(
-        '<div class="cfm-empty" style="padding:16px;">还没有配置任何文件夹</div>',
-      );
-    } else {
-      for (const folderId of topFoldersConfig)
-        renderConfigTreeItem(treeContainer, folderId, 0);
-    }
-
-    // 删除模式下显示操作栏
+    // 删除模式下在树上方显示操作栏
     if (cfmDeleteMode) {
       const allFolderIds = getFolderTagIds();
       const allSelected =
         allFolderIds.length > 0 &&
         allFolderIds.every((id) => cfmDeleteSelected.has(id));
 
-      // 计算反选范围描述
-      let invertScopeLabel = "全部文件夹";
-      if (cfmInvertScope === "parent") {
-        invertScopeLabel = configSelectedFolderId
-          ? `「${getTagName(configSelectedFolderId)}」的子级`
-          : "顶级文件夹";
-      }
-
       const deleteBar = $(`
-                <div class="cfm-delete-bar cfm-delete-bar-controls">
+                <div class="cfm-config-section cfm-delete-bar cfm-delete-bar-controls">
                     <div class="cfm-delete-bar-top">
                         <div class="cfm-delete-bar-left">
                             <button class="cfm-btn cfm-btn-sm" id="cfm-select-all" title="全选/全不选"><i class="fa-solid fa-${allSelected ? "square-minus" : "square-check"}"></i> ${allSelected ? "全不选" : "全选"}</button>
@@ -2536,7 +2496,7 @@ jQuery(async () => {
       deleteBar.find("#cfm-range-toggle").on("click touchend", (e) => {
         e.preventDefault();
         cfmDeleteRangeMode = !cfmDeleteRangeMode;
-        if (cfmDeleteRangeMode) cfmDeleteLastClickedId = null; // 重置起点
+        if (cfmDeleteRangeMode) cfmDeleteLastClickedId = null;
         renderConfigBody();
       });
       deleteBar.find("#cfm-invert-scope").on("change", function (e) {
@@ -2551,7 +2511,39 @@ jQuery(async () => {
         e.preventDefault();
         executeMultiDelete();
       });
-      treeContainer.append(deleteBar);
+      body.append(deleteBar);
+    }
+
+    // 2. 当前文件夹树形展示（支持拖拽 + 点击选中）
+    const treeSection = $(`
+            <div class="cfm-config-section">
+                <label>当前文件夹结构 <span class="cfm-drag-hint">拖拽调整层级 · 点击选中为目标父级</span></label>
+                <div class="cfm-tree" id="cfm-folder-tree"></div>
+            </div>
+        `);
+    body.append(treeSection);
+    const treeContainer = treeSection.find("#cfm-folder-tree");
+
+    if (configSelectedFolderId) {
+      const selectedHint = $(
+        `<div class="cfm-selected-hint"><i class="fa-solid fa-crosshairs"></i> 已选中：<strong>${escapeHtml(getTagName(configSelectedFolderId))}</strong><button class="cfm-btn-deselect" title="取消选中"><i class="fa-solid fa-xmark"></i></button></div>`,
+      );
+      selectedHint.find(".cfm-btn-deselect").on("click touchend", (e) => {
+        e.preventDefault();
+        configSelectedFolderId = null;
+        renderConfigBody();
+      });
+      treeContainer.append(selectedHint);
+    }
+
+    const topFoldersConfig = sortFolders(getTopLevelFolders());
+    if (topFoldersConfig.length === 0) {
+      treeContainer.append(
+        '<div class="cfm-empty" style="padding:16px;">还没有配置任何文件夹</div>',
+      );
+    } else {
+      for (const folderId of topFoldersConfig)
+        renderConfigTreeItem(treeContainer, folderId, 0);
     }
 
     // 根目录拖放区域
@@ -2991,9 +2983,9 @@ jQuery(async () => {
     const parentHint = parentFolderId
       ? `「${getTagName(parentFolderId)}」下`
       : "顶级";
-    const modeHint = syncTags ? "" : "（虚拟）";
+    const typeHint = syncTags ? "文件夹和标签" : "虚拟文件夹";
     toastr.success(
-      `已创建 ${created.length} 个${parentHint}文件夹${modeHint}: ${created.join(", ")}`,
+      `已创建 ${created.length} 个${parentHint}${typeHint}: ${created.join(", ")}`,
     );
   }
 
@@ -3170,8 +3162,8 @@ jQuery(async () => {
 
     saveConfig(config);
     context.saveSettingsDebounced();
-    const modeHint = syncTags ? "" : "（虚拟文件夹）";
-    toastr.success(`批量创建完成，共新增 ${count} 个文件夹${modeHint}`);
+    const typeHint = syncTags ? "文件夹和标签" : "虚拟文件夹";
+    toastr.success(`批量创建完成，共新增 ${count} 个${typeHint}`);
   }
 
   // ==================== 初始化 ====================
