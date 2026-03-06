@@ -623,13 +623,6 @@ jQuery(async () => {
       overlay.remove();
       onRevert();
     });
-    overlay.on("click", (e) => {
-      if (e.target === overlay[0]) {
-        // 点击遮罩等同于"否"
-        overlay.remove();
-        onRevert();
-      }
-    });
   }
   // 移动文件夹到新父级并插入到指定位置
   function reorderFolder(folderId, newParentId, insertBeforeId) {
@@ -998,9 +991,6 @@ jQuery(async () => {
     overlay.append(popup);
     $("body").append(overlay);
 
-    overlay.on("click", (e) => {
-      if (e.target === overlay[0]) closeMainPopup();
-    });
     popup.find("#cfm-btn-close-main").on("click touchend", (e) => {
       e.preventDefault();
       closeMainPopup();
@@ -1883,9 +1873,6 @@ jQuery(async () => {
         `);
     overlay.append(popup);
     $("body").append(overlay);
-    overlay.on("click", (e) => {
-      if (e.target === overlay[0]) closeConfigPopup();
-    });
     popup.find("#cfm-btn-close-config").on("click touchend", (e) => {
       e.preventDefault();
       closeConfigPopup();
@@ -2042,39 +2029,7 @@ jQuery(async () => {
     });
     body.append(batchSection);
 
-    // 2. 当前文件夹树形展示（支持拖拽 + 点击选中）
-    const treeSection = $(`
-            <div class="cfm-config-section">
-                <label>当前文件夹结构 <span class="cfm-drag-hint">拖拽调整层级 · 点击选中为目标父级</span></label>
-                <div class="cfm-tree" id="cfm-folder-tree"></div>
-            </div>
-        `);
-    body.append(treeSection);
-    const treeContainer = treeSection.find("#cfm-folder-tree");
-
-    if (configSelectedFolderId) {
-      const selectedHint = $(
-        `<div class="cfm-selected-hint"><i class="fa-solid fa-crosshairs"></i> 已选中：<strong>${escapeHtml(getTagName(configSelectedFolderId))}</strong><button class="cfm-btn-deselect" title="取消选中"><i class="fa-solid fa-xmark"></i></button></div>`,
-      );
-      selectedHint.find(".cfm-btn-deselect").on("click touchend", (e) => {
-        e.preventDefault();
-        configSelectedFolderId = null;
-        renderConfigBody();
-      });
-      treeContainer.append(selectedHint);
-    }
-
-    const topFoldersConfig = sortFolders(getTopLevelFolders());
-    if (topFoldersConfig.length === 0) {
-      treeContainer.append(
-        '<div class="cfm-empty" style="padding:16px;">还没有配置任何文件夹</div>',
-      );
-    } else {
-      for (const folderId of topFoldersConfig)
-        renderConfigTreeItem(treeContainer, folderId, 0);
-    }
-
-    // 删除模式下显示操作栏
+    // 删除模式下显示操作栏（紧跟在批量操作区域下方）
     if (cfmDeleteMode) {
       const allFolderIds = getFolderTagIds();
       const allSelected =
@@ -2128,7 +2083,7 @@ jQuery(async () => {
       deleteBar.find("#cfm-range-toggle").on("click touchend", (e) => {
         e.preventDefault();
         cfmDeleteRangeMode = !cfmDeleteRangeMode;
-        if (cfmDeleteRangeMode) cfmDeleteLastClickedId = null; // 重置起点
+        if (cfmDeleteRangeMode) cfmDeleteLastClickedId = null;
         renderConfigBody();
       });
       deleteBar.find("#cfm-invert-scope").on("change", function (e) {
@@ -2143,9 +2098,42 @@ jQuery(async () => {
         e.preventDefault();
         executeMultiDelete();
       });
-      treeContainer.append(deleteBar);
+      body.append(deleteBar);
     }
 
+    // 2. 当前文件夹树形展示（支持拖拽 + 点击选中）
+    const treeSection = $(`
+            <div class="cfm-config-section">
+                <label>当前文件夹结构 <span class="cfm-drag-hint">拖拽调整层级 · 点击选中为目标父级</span></label>
+                <div class="cfm-tree" id="cfm-folder-tree"></div>
+            </div>
+        `);
+    body.append(treeSection);
+    const treeContainer = treeSection.find("#cfm-folder-tree");
+
+    if (configSelectedFolderId) {
+      const selectedHint = $(
+        `<div class="cfm-selected-hint"><i class="fa-solid fa-crosshairs"></i> 已选中：<strong>${escapeHtml(getTagName(configSelectedFolderId))}</strong><button class="cfm-btn-deselect" title="取消选中"><i class="fa-solid fa-xmark"></i></button></div>`,
+      );
+      selectedHint.find(".cfm-btn-deselect").on("click touchend", (e) => {
+        e.preventDefault();
+        configSelectedFolderId = null;
+        renderConfigBody();
+      });
+      treeContainer.append(selectedHint);
+    }
+
+    const topFoldersConfig = sortFolders(getTopLevelFolders());
+    if (topFoldersConfig.length === 0) {
+      treeContainer.append(
+        '<div class="cfm-empty" style="padding:16px;">还没有配置任何文件夹</div>',
+      );
+    } else {
+      for (const folderId of topFoldersConfig)
+        renderConfigTreeItem(treeContainer, folderId, 0);
+    }
+
+    // 删除模式下显示操作栏
     // 根目录拖放区域
     const rootDropzone = $(
       '<div class="cfm-root-dropzone"><i class="fa-solid fa-arrow-up"></i> 拖拽到此处设为顶级文件夹</div>',
@@ -2407,9 +2395,6 @@ jQuery(async () => {
         `);
     overlay.append(dialog);
     $("body").append(overlay);
-    overlay.on("click", (e) => {
-      if (e.target === overlay[0]) overlay.remove();
-    });
     dialog.find("#cfm-dc-close, #cfm-dc-cancel").on("click touchend", (e) => {
       e.preventDefault();
       overlay.remove();
@@ -2544,9 +2529,6 @@ jQuery(async () => {
         `);
     overlay.append(popup);
     $("body").append(overlay);
-    overlay.on("click", (e) => {
-      if (e.target === overlay[0]) overlay.remove();
-    });
     popup.find("#cfm-batch-close").on("click touchend", (e) => {
       e.preventDefault();
       overlay.remove();
