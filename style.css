@@ -248,6 +248,18 @@
     background-color: rgba(137, 180, 250, 0.08) !important;
 }
 
+/* ========== 右侧搜索栏 ========== */
+.cfm-right-search-bar {
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, #45475a);
+    flex-shrink: 0;
+    background-color: rgba(0, 0, 0, 0.05);
+}
+.cfm-right-search-bar .cfm-rv-search {
+    width: 100%;
+    box-sizing: border-box;
+}
+
 /* ========== 右侧面板：内容列表 ========== */
 .cfm-right-pane {
     flex: 1;
@@ -1293,6 +1305,27 @@
     }
 }
 
+/* 移动端搜索栏适配 */
+@media (max-width: 768px) {
+    .cfm-global-search-bar {
+        padding: 8px 12px;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+    .cfm-global-search-input {
+        flex: 1 1 100%;
+        padding: 8px 10px;
+        font-size: 14px;
+        min-height: 40px;
+    }
+    .cfm-search-select {
+        flex: 1;
+        padding: 8px 6px;
+        font-size: 13px;
+        min-height: 36px;
+    }
+}
+
 /* 超小屏幕（手机竖屏） */
 @media (max-width: 480px) {
     .cfm-left-pane {
@@ -1310,6 +1343,50 @@
         padding: 12px 16px;
         min-height: 56px;
     }
+}
+
+/* ========== 全局搜索栏 ========== */
+.cfm-global-search-bar {
+    display: flex;
+    gap: 6px;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, #45475a);
+    flex-shrink: 0;
+    background-color: rgba(0, 0, 0, 0.06);
+    align-items: center;
+}
+.cfm-global-search-input {
+    flex: 1;
+    padding: 5px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--SmartThemeBorderColor, #45475a);
+    background-color: rgba(0, 0, 0, 0.2);
+    color: var(--SmartThemeBodyColor, #f2f3f5);
+    font-size: 13px;
+    min-width: 0;
+}
+.cfm-global-search-input:focus {
+    outline: none;
+    border-color: #89b4fa;
+}
+.cfm-search-select {
+    padding: 5px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--SmartThemeBorderColor, #45475a);
+    background-color: rgba(0, 0, 0, 0.2);
+    color: var(--SmartThemeBodyColor, #f2f3f5);
+    font-size: 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.cfm-search-select:focus {
+    outline: none;
+    border-color: #89b4fa;
+}
+.cfm-search-result .cfm-row-folder-path {
+    font-size: 11px;
+    opacity: 0.4;
+    margin-top: 1px;
 }
 
 /* ========== 资源类型标签栏 ========== */

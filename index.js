@@ -1366,6 +1366,17 @@ jQuery(async () => {
                     <div class="cfm-tab" data-tab="presets"><i class="fa-solid fa-sliders"></i> 预设</div>
                     <div class="cfm-tab" data-tab="worldinfo"><i class="fa-solid fa-book-atlas"></i> 世界书</div>
                 </div>
+                <div class="cfm-global-search-bar" id="cfm-global-search-bar">
+                    <input type="text" class="cfm-global-search-input" id="cfm-global-search" placeholder="搜索..." />
+                    <select id="cfm-search-scope" class="cfm-search-select" title="搜索范围">
+                        <option value="current">当前文件夹</option>
+                        <option value="all">全部文件夹</option>
+                    </select>
+                    <select id="cfm-search-type" class="cfm-search-select" title="搜索类型">
+                        <option value="char">角色卡</option>
+                        <option value="folder">文件夹</option>
+                    </select>
+                </div>
                 <div class="cfm-dual-pane" id="cfm-chars-view">
                     <div class="cfm-left-pane">
                         <div class="cfm-left-header">
@@ -1607,6 +1618,129 @@ jQuery(async () => {
     rightCharSortMode = null;
 
     renderLeftTree();
+
+    // 全局搜索框事件绑定
+    popup.find("#cfm-global-search").on("input", function () {
+      executeGlobalSearch();
+    });
+    popup.find("#cfm-search-scope").on("change", function () {
+      executeGlobalSearch();
+    });
+    popup.find("#cfm-search-type").on("change", function () {
+      const type = $(this).val();
+      $("#cfm-global-search").attr("placeholder", type === "folder" ? "搜索文件夹..." : "搜索角色...");
+      executeGlobalSearch();
+    });
+  }
+
+  // ==================== 全局搜索功能 ====================
+  function executeGlobalSearch() {
+    const q = $("#cfm-global-search").val().toLowerCase().trim();
+    const scope = $("#cfm-search-scope").val(); // 'current' | 'all'
+    const type = $("#cfm-search-type").val(); // 'char' | 'folder'
+
+    if (!q) {
+      // 清空搜索时恢复正常视图
+      renderRightPane();
+      return;
+    }
+
+    const list = $("#cfm-right-list");
+    const pathEl = $("#cfm-rh-path");
+    const countEl = $("#cfm-rh-count");
+
+    if (type === "folder") {
+      // 搜索文件夹
+      list.empty();
+      const allFolderIds = getFolderTagIds();
+      let matchedIds;
+      if (scope === "current" && selectedTreeNode && selectedTreeNode !== "__uncategorized__" && selectedTreeNode !== "__favorites__") {
+        // 当前文件夹下递归搜索
+        const collectDescendants = (parentId) => {
+          let result = [parentId];
+          for (const childId of getChildFolders(parentId)) {
+            result = result.concat(collectDescendants(childId));
+          }
+          return result;
+        };
+        const descendants = collectDescendants(selectedTreeNode);
+        matchedIds = descendants.filter(id => getTagName(id).toLowerCase().includes(q));
+      } else {
+        matchedIds = allFolderIds.filter(id => getTagName(id).toLowerCase().includes(q));
+      }
+
+      pathEl.text(`搜索文件夹: "${q}"`);
+      countEl.text(`${matchedIds.length} 个结果`);
+
+      if (matchedIds.length === 0) {
+        list.html('<div class="cfm-right-empty">未找到匹配的文件夹</div>');
+        return;
+      }
+
+      for (const fid of matchedIds) {
+        const folderPath = getFolderPath(fid).map(id => getTagName(id)).join(" › ");
+        const childCount = countCharsInFolderRecursive(fid);
+        const row = $(`
+          <div class="cfm-row cfm-row-folder cfm-search-result" data-folder-id="${fid}">
+            <div class="cfm-row-icon"><i class="fa-solid fa-folder"></i></div>
+            <div class="cfm-row-name">${escapeHtml(getTagName(fid))}<div class="cfm-row-folder-path">${escapeHtml(folderPath)}</div></div>
+            <div class="cfm-row-meta">${childCount} 个角色</div>
+          </div>
+        `);
+        row.on("click", (e) => {
+          e.preventDefault();
+          // 导航到该文件夹
+          const fullPath = getFolderPath(fid);
+          for (const pid of fullPath) expandedNodes.add(pid);
+          selectedTreeNode = fid;
+          $("#cfm-global-search").val("");
+          renderLeftTree();
+          renderRightPane();
+        });
+        list.append(row);
+      }
+    } else {
+      // 搜索角色
+      list.empty();
+      let chars;
+      if (scope === "current" && selectedTreeNode) {
+        if (selectedTreeNode === "__uncategorized__") {
+          chars = getUncategorizedCharacters();
+        } else if (selectedTreeNode === "__favorites__") {
+          chars = getFavoriteCharacters();
+        } else {
+          // 当前文件夹下递归收集所有角色
+          const collectCharsRecursive = (folderId) => {
+            let result = [...getCharactersInFolder(folderId)];
+            for (const childId of getChildFolders(folderId)) {
+              result = result.concat(collectCharsRecursive(childId));
+            }
+            return result;
+          };
+          chars = collectCharsRecursive(selectedTreeNode);
+        }
+      } else {
+        chars = getCharacters();
+      }
+
+      const matched = chars.filter(c => (c.name || "").toLowerCase().includes(q));
+
+      pathEl.text(`搜索角色: "${q}"`);
+      countEl.text(`${matched.length} 个结果`);
+
+      if (matched.length === 0) {
+        list.html('<div class="cfm-right-empty">未找到匹配的角色</div>');
+        return;
+      }
+
+      // 去重（递归收集可能有重复）
+      const seen = new Set();
+      for (const char of matched) {
+        if (seen.has(char.avatar)) continue;
+        seen.add(char.avatar);
+        appendCharRow(list, char, true);
+      }
+    }
   }
 
   // 更新排序按钮的激活状态
@@ -1947,6 +2081,8 @@ jQuery(async () => {
     const pathEl = $("#cfm-rh-path");
     const countEl = $("#cfm-rh-count");
     list.empty();
+    // 切换文件夹时清空搜索框
+    $("#cfm-char-search").val("");
 
     if (!selectedTreeNode) {
       pathEl.text("选择左侧文件夹查看内容");
