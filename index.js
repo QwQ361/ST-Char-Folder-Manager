@@ -16,7 +16,10 @@ jQuery(async () => {
     if (!extension_settings[extensionName].worldInfoGroups)
       extension_settings[extensionName].worldInfoGroups = {};
     if (!extension_settings[extensionName].resourceFolders)
-      extension_settings[extensionName].resourceFolders = { presets: [], worldinfo: [] };
+      extension_settings[extensionName].resourceFolders = {
+        presets: [],
+        worldinfo: [],
+      };
   }
 
   function getResourceFolders(type) {
@@ -1371,8 +1374,8 @@ jQuery(async () => {
                 </div>
                 <div class="cfm-resource-tabs">
                     <div class="cfm-tab cfm-tab-active" data-tab="chars"><i class="fa-solid fa-users"></i> 角色卡</div>
-                    <div class="cfm-tab" data-tab="presets"><i class="fa-solid fa-sliders"></i> 预设</div>
                     <div class="cfm-tab" data-tab="worldinfo"><i class="fa-solid fa-book-atlas"></i> 世界书</div>
+                    <div class="cfm-tab" data-tab="presets"><i class="fa-solid fa-sliders"></i> 预设</div>
                 </div>
                 <div class="cfm-global-search-bar" id="cfm-global-search-bar">
                     <input type="text" class="cfm-global-search-input" id="cfm-global-search" placeholder="搜索..." />
@@ -1382,6 +1385,28 @@ jQuery(async () => {
                     </select>
                     <select id="cfm-search-type" class="cfm-search-select" title="搜索类型">
                         <option value="char">角色卡</option>
+                        <option value="folder">文件夹</option>
+                    </select>
+                </div>
+                <div class="cfm-global-search-bar" id="cfm-preset-search-bar" style="display:none;">
+                    <input type="text" class="cfm-global-search-input" id="cfm-preset-global-search" placeholder="搜索..." />
+                    <select id="cfm-preset-search-scope" class="cfm-search-select" title="搜索范围">
+                        <option value="current">当前文件夹</option>
+                        <option value="all">全部文件夹</option>
+                    </select>
+                    <select id="cfm-preset-search-type" class="cfm-search-select" title="搜索类型">
+                        <option value="preset">预设</option>
+                        <option value="folder">文件夹</option>
+                    </select>
+                </div>
+                <div class="cfm-global-search-bar" id="cfm-worldinfo-search-bar" style="display:none;">
+                    <input type="text" class="cfm-global-search-input" id="cfm-worldinfo-global-search" placeholder="搜索..." />
+                    <select id="cfm-worldinfo-search-scope" class="cfm-search-select" title="搜索范围">
+                        <option value="current">当前文件夹</option>
+                        <option value="all">全部文件夹</option>
+                    </select>
+                    <select id="cfm-worldinfo-search-type" class="cfm-search-select" title="搜索类型">
+                        <option value="worldinfo">世界书</option>
                         <option value="folder">文件夹</option>
                     </select>
                 </div>
@@ -1415,46 +1440,40 @@ jQuery(async () => {
                 <div class="cfm-dual-pane" id="cfm-presets-view" style="display:none;">
                     <div class="cfm-left-pane">
                         <div class="cfm-left-header">
-                            <span>分组</span>
+                            <span>文件夹</span>
                             <span class="cfm-left-header-actions">
-                                <button class="cfm-preset-add-folder" title="新建分组"><i class="fa-solid fa-folder-plus"></i></button>
+                                <button class="cfm-preset-add-folder" title="新建文件夹"><i class="fa-solid fa-folder-plus"></i></button>
                             </span>
                         </div>
                         <div class="cfm-left-tree" id="cfm-preset-left-tree"></div>
                     </div>
                     <div class="cfm-right-pane">
                         <div class="cfm-right-header">
-                            <span class="cfm-rh-path" id="cfm-preset-rh-path">选择左侧分组查看内容</span>
+                            <span class="cfm-rh-path" id="cfm-preset-rh-path">选择左侧文件夹查看内容</span>
                             <span class="cfm-rh-count" id="cfm-preset-rh-count"></span>
                         </div>
-                        <div class="cfm-right-search-bar">
-                            <input type="text" class="cfm-rv-search" id="cfm-preset-search" placeholder="搜索预设..." />
-                        </div>
                         <div class="cfm-right-list" id="cfm-preset-right-list">
-                            <div class="cfm-right-empty">← 点击左侧分组查看内容</div>
+                            <div class="cfm-right-empty">← 点击左侧文件夹查看内容</div>
                         </div>
                     </div>
                 </div>
                 <div class="cfm-dual-pane" id="cfm-worldinfo-view" style="display:none;">
                     <div class="cfm-left-pane">
                         <div class="cfm-left-header">
-                            <span>分组</span>
+                            <span>文件夹</span>
                             <span class="cfm-left-header-actions">
-                                <button class="cfm-worldinfo-add-folder" title="新建分组"><i class="fa-solid fa-folder-plus"></i></button>
+                                <button class="cfm-worldinfo-add-folder" title="新建文件夹"><i class="fa-solid fa-folder-plus"></i></button>
                             </span>
                         </div>
                         <div class="cfm-left-tree" id="cfm-worldinfo-left-tree"></div>
                     </div>
                     <div class="cfm-right-pane">
                         <div class="cfm-right-header">
-                            <span class="cfm-rh-path" id="cfm-worldinfo-rh-path">选择左侧分组查看内容</span>
+                            <span class="cfm-rh-path" id="cfm-worldinfo-rh-path">选择左侧文件夹查看内容</span>
                             <span class="cfm-rh-count" id="cfm-worldinfo-rh-count"></span>
                         </div>
-                        <div class="cfm-right-search-bar">
-                            <input type="text" class="cfm-rv-search" id="cfm-worldinfo-search" placeholder="搜索世界书..." />
-                        </div>
                         <div class="cfm-right-list" id="cfm-worldinfo-right-list">
-                            <div class="cfm-right-empty">← 点击左侧分组查看内容</div>
+                            <div class="cfm-right-empty">← 点击左侧文件夹查看内容</div>
                         </div>
                     </div>
                 </div>
@@ -1477,8 +1496,10 @@ jQuery(async () => {
       popup.find("#cfm-worldinfo-view").toggle(tab === "worldinfo");
       // 切换header按钮可见性
       popup.find("#cfm-btn-copymode").toggle(tab === "chars");
-      // 全局搜索栏仅在角色卡tab显示
+      // 切换搜索栏
       popup.find("#cfm-global-search-bar").toggle(tab === "chars");
+      popup.find("#cfm-preset-search-bar").toggle(tab === "presets");
+      popup.find("#cfm-worldinfo-search-bar").toggle(tab === "worldinfo");
       if (tab === "presets") renderPresetsView();
       else if (tab === "worldinfo") renderWorldInfoView();
     });
@@ -1681,8 +1702,43 @@ jQuery(async () => {
     });
     popup.find("#cfm-search-type").on("change", function () {
       const type = $(this).val();
-      $("#cfm-global-search").attr("placeholder", type === "folder" ? "搜索文件夹..." : "搜索角色...");
+      $("#cfm-global-search").attr(
+        "placeholder",
+        type === "folder" ? "搜索文件夹..." : "搜索角色...",
+      );
       executeGlobalSearch();
+    });
+
+    // 预设搜索框事件绑定
+    popup.find("#cfm-preset-global-search").on("input", function () {
+      executePresetSearch();
+    });
+    popup.find("#cfm-preset-search-scope").on("change", function () {
+      executePresetSearch();
+    });
+    popup.find("#cfm-preset-search-type").on("change", function () {
+      const type = $(this).val();
+      $("#cfm-preset-global-search").attr(
+        "placeholder",
+        type === "folder" ? "搜索文件夹..." : "搜索预设...",
+      );
+      executePresetSearch();
+    });
+
+    // 世界书搜索框事件绑定
+    popup.find("#cfm-worldinfo-global-search").on("input", function () {
+      executeWorldInfoSearch();
+    });
+    popup.find("#cfm-worldinfo-search-scope").on("change", function () {
+      executeWorldInfoSearch();
+    });
+    popup.find("#cfm-worldinfo-search-type").on("change", function () {
+      const type = $(this).val();
+      $("#cfm-worldinfo-global-search").attr(
+        "placeholder",
+        type === "folder" ? "搜索文件夹..." : "搜索世界书...",
+      );
+      executeWorldInfoSearch();
     });
   }
 
@@ -1707,7 +1763,12 @@ jQuery(async () => {
       list.empty();
       const allFolderIds = getFolderTagIds();
       let matchedIds;
-      if (scope === "current" && selectedTreeNode && selectedTreeNode !== "__uncategorized__" && selectedTreeNode !== "__favorites__") {
+      if (
+        scope === "current" &&
+        selectedTreeNode &&
+        selectedTreeNode !== "__uncategorized__" &&
+        selectedTreeNode !== "__favorites__"
+      ) {
         // 当前文件夹下递归搜索
         const collectDescendants = (parentId) => {
           let result = [parentId];
@@ -1717,9 +1778,13 @@ jQuery(async () => {
           return result;
         };
         const descendants = collectDescendants(selectedTreeNode);
-        matchedIds = descendants.filter(id => getTagName(id).toLowerCase().includes(q));
+        matchedIds = descendants.filter((id) =>
+          getTagName(id).toLowerCase().includes(q),
+        );
       } else {
-        matchedIds = allFolderIds.filter(id => getTagName(id).toLowerCase().includes(q));
+        matchedIds = allFolderIds.filter((id) =>
+          getTagName(id).toLowerCase().includes(q),
+        );
       }
 
       pathEl.text(`搜索文件夹: "${q}"`);
@@ -1731,7 +1796,9 @@ jQuery(async () => {
       }
 
       for (const fid of matchedIds) {
-        const folderPath = getFolderPath(fid).map(id => getTagName(id)).join(" › ");
+        const folderPath = getFolderPath(fid)
+          .map((id) => getTagName(id))
+          .join(" › ");
         const childCount = countCharsInFolderRecursive(fid);
         const row = $(`
           <div class="cfm-row cfm-row-folder cfm-search-result" data-folder-id="${fid}">
@@ -1776,7 +1843,9 @@ jQuery(async () => {
         chars = getCharacters();
       }
 
-      const matched = chars.filter(c => (c.name || "").toLowerCase().includes(q));
+      const matched = chars.filter((c) =>
+        (c.name || "").toLowerCase().includes(q),
+      );
 
       pathEl.text(`搜索角色: "${q}"`);
       countEl.text(`${matched.length} 个结果`);
@@ -1793,6 +1862,180 @@ jQuery(async () => {
         seen.add(char.avatar);
         appendCharRow(list, char, true);
       }
+    }
+  }
+
+  // ==================== 预设全局搜索 ====================
+  function executePresetSearch() {
+    const q = $("#cfm-preset-global-search").val().toLowerCase().trim();
+    const scope = $("#cfm-preset-search-scope").val();
+    const type = $("#cfm-preset-search-type").val();
+
+    if (!q) {
+      renderPresetsView();
+      return;
+    }
+
+    const rightList = $("#cfm-preset-right-list");
+    const pathEl = $("#cfm-preset-rh-path");
+    const countEl = $("#cfm-preset-rh-count");
+
+    const presets = getCurrentPresets();
+    const groups = getResourceGroups("presets");
+    const folders = getResourceFolders("presets");
+
+    if (type === "folder") {
+      // 搜索文件夹名
+      const matched = folders.filter((f) => f.toLowerCase().includes(q));
+      rightList.empty();
+      pathEl.text(`搜索文件夹: "${q}"`);
+      countEl.text(`${matched.length} 个结果`);
+      if (matched.length === 0) {
+        rightList.html('<div class="cfm-right-empty">未找到匹配的文件夹</div>');
+        return;
+      }
+      for (const fname of matched) {
+        const items = presets.filter((p) => groups[p.name] === fname);
+        const row = $(`
+          <div class="cfm-row cfm-row-folder cfm-search-result">
+            <div class="cfm-row-icon"><i class="fa-solid fa-folder"></i></div>
+            <div class="cfm-row-name">${escapeHtml(fname)}</div>
+            <div class="cfm-row-meta">${items.length} 个预设</div>
+          </div>
+        `);
+        row.on("click", () => {
+          selectedPresetFolder = fname;
+          $("#cfm-preset-global-search").val("");
+          renderPresetsView();
+        });
+        rightList.append(row);
+      }
+    } else {
+      // 搜索预设
+      let searchPool = presets;
+      if (scope === "current" && selectedPresetFolder) {
+        if (selectedPresetFolder === "__ungrouped__") {
+          searchPool = presets.filter(
+            (p) => !groups[p.name] || !folders.includes(groups[p.name]),
+          );
+        } else if (folders.includes(selectedPresetFolder)) {
+          searchPool = presets.filter(
+            (p) => groups[p.name] === selectedPresetFolder,
+          );
+        }
+      }
+      const matched = searchPool.filter((p) =>
+        p.name.toLowerCase().includes(q),
+      );
+      rightList.empty();
+      pathEl.text(`搜索预设: "${q}"`);
+      countEl.text(`${matched.length} 个结果`);
+      if (matched.length === 0) {
+        rightList.html('<div class="cfm-right-empty">未找到匹配的预设</div>');
+        return;
+      }
+      const pm = getContext().getPresetManager();
+      const currentVal = pm && pm.select ? pm.select.val() : null;
+      for (const p of matched) {
+        const isActive = p.value === currentVal;
+        const row = $(`
+          <div class="cfm-row cfm-row-char ${isActive ? "cfm-rv-item-active" : ""}">
+            <div class="cfm-row-icon"><i class="fa-solid fa-file-lines" style="font-size:20px;color:#8b9dfc;"></i></div>
+            <div class="cfm-row-name">${escapeHtml(p.name)}</div>
+          </div>
+        `);
+        row.on("click", () => {
+          applyPreset(p.value);
+          rightList
+            .find(".cfm-rv-item-active")
+            .removeClass("cfm-rv-item-active");
+          row.addClass("cfm-rv-item-active");
+          toastr.success(`已应用预设「${p.name}」`);
+        });
+        rightList.append(row);
+      }
+    }
+  }
+
+  // ==================== 世界书全局搜索 ====================
+  function executeWorldInfoSearch() {
+    const q = $("#cfm-worldinfo-global-search").val().toLowerCase().trim();
+    const scope = $("#cfm-worldinfo-search-scope").val();
+    const type = $("#cfm-worldinfo-search-type").val();
+
+    if (!q) {
+      renderWorldInfoView();
+      return;
+    }
+
+    const rightList = $("#cfm-worldinfo-right-list");
+    const pathEl = $("#cfm-worldinfo-rh-path");
+    const countEl = $("#cfm-worldinfo-rh-count");
+
+    const groups = getResourceGroups("worldinfo");
+    const folders = getResourceFolders("worldinfo");
+
+    if (type === "folder") {
+      const matched = folders.filter((f) => f.toLowerCase().includes(q));
+      rightList.empty();
+      pathEl.text(`搜索文件夹: "${q}"`);
+      countEl.text(`${matched.length} 个结果`);
+      if (matched.length === 0) {
+        rightList.html('<div class="cfm-right-empty">未找到匹配的文件夹</div>');
+        return;
+      }
+      for (const fname of matched) {
+        const row = $(`
+          <div class="cfm-row cfm-row-folder cfm-search-result">
+            <div class="cfm-row-icon"><i class="fa-solid fa-folder"></i></div>
+            <div class="cfm-row-name">${escapeHtml(fname)}</div>
+          </div>
+        `);
+        row.on("click", () => {
+          selectedWorldInfoFolder = fname;
+          $("#cfm-worldinfo-global-search").val("");
+          renderWorldInfoView();
+        });
+        rightList.append(row);
+      }
+    } else {
+      // 需要异步获取世界书名称列表
+      getWorldInfoNames().then((names) => {
+        let searchPool = names;
+        if (scope === "current" && selectedWorldInfoFolder) {
+          if (selectedWorldInfoFolder === "__ungrouped__") {
+            searchPool = names.filter(
+              (n) => !groups[n] || !folders.includes(groups[n]),
+            );
+          } else if (folders.includes(selectedWorldInfoFolder)) {
+            searchPool = names.filter(
+              (n) => groups[n] === selectedWorldInfoFolder,
+            );
+          }
+        }
+        const matched = searchPool.filter((n) => n.toLowerCase().includes(q));
+        rightList.empty();
+        pathEl.text(`搜索世界书: "${q}"`);
+        countEl.text(`${matched.length} 个结果`);
+        if (matched.length === 0) {
+          rightList.html(
+            '<div class="cfm-right-empty">未找到匹配的世界书</div>',
+          );
+          return;
+        }
+        for (const n of matched) {
+          const row = $(`
+            <div class="cfm-row cfm-row-char">
+              <div class="cfm-row-icon"><i class="fa-solid fa-book" style="font-size:20px;color:#a6e3a1;"></i></div>
+              <div class="cfm-row-name">${escapeHtml(n)}</div>
+            </div>
+          `);
+          row.on("click", () => {
+            openWorldInfoEditor(n);
+          });
+          rightList.append(row);
+        }
+      });
     }
   }
 
@@ -3269,18 +3512,23 @@ jQuery(async () => {
     const groups = getResourceGroups("presets");
     const apiId = getCurrentPresetApiId();
 
-    // 新建分组按钮事件
-    $(".cfm-preset-add-folder").off("click touchend").on("click touchend", (e) => {
-      e.preventDefault();
-      const name = prompt("输入分组名称：");
-      if (!name || !name.trim()) return;
-      const f = getResourceFolders("presets");
-      if (f.includes(name.trim())) { toastr.warning("分组已存在"); return; }
-      f.push(name.trim());
-      setResourceFolders("presets", f);
-      renderPresetsView();
-      toastr.success(`已创建分组「${name.trim()}」`);
-    });
+    // 新建文件夹按钮事件
+    $(".cfm-preset-add-folder")
+      .off("click touchend")
+      .on("click touchend", (e) => {
+        e.preventDefault();
+        const name = prompt("输入文件夹名称：");
+        if (!name || !name.trim()) return;
+        const f = getResourceFolders("presets");
+        if (f.includes(name.trim())) {
+          toastr.warning("文件夹已存在");
+          return;
+        }
+        f.push(name.trim());
+        setResourceFolders("presets", f);
+        renderPresetsView();
+        toastr.success(`已创建文件夹「${name.trim()}」`);
+      });
 
     // 分类
     const folderItems = {};
@@ -3295,19 +3543,7 @@ jQuery(async () => {
       }
     }
 
-    // 左侧：全部入口
-    const allNode = $(`
-      <div class="cfm-tnode ${selectedPresetFolder === "__all__" ? "cfm-tnode-selected" : ""}" data-id="__all__" style="padding-left:10px;">
-        <span class="cfm-tnode-arrow cfm-arrow-hidden"><i class="fa-solid fa-caret-right"></i></span>
-        <span class="cfm-tnode-icon"><i class="fa-solid fa-sliders"></i></span>
-        <span class="cfm-tnode-label">全部预设 (${apiId})</span>
-        <span class="cfm-tnode-count">${presets.length}</span>
-      </div>
-    `);
-    allNode.on("click", (e) => { e.preventDefault(); selectedPresetFolder = "__all__"; renderPresetsView(); });
-    leftTree.append(allNode);
-
-    // 左侧：各分组
+    // 左侧：各文件夹
     for (const fname of folders) {
       const items = folderItems[fname] || [];
       const isSelected = selectedPresetFolder === fname;
@@ -3319,38 +3555,66 @@ jQuery(async () => {
           <span class="cfm-tnode-count">${items.length}</span>
         </div>
       `);
-      node.on("click", (e) => { e.preventDefault(); selectedPresetFolder = fname; renderPresetsView(); });
+      node.on("click", (e) => {
+        e.preventDefault();
+        selectedPresetFolder = fname;
+        renderPresetsView();
+      });
       // 拖放目标
-      node.on("dragover", (e) => { e.preventDefault(); node.addClass("cfm-drop-target"); });
+      node.on("dragover", (e) => {
+        e.preventDefault();
+        node.addClass("cfm-drop-target");
+      });
       node.on("dragleave", () => node.removeClass("cfm-drop-target"));
       node.on("drop", (e) => {
-        e.preventDefault(); node.removeClass("cfm-drop-target");
+        e.preventDefault();
+        node.removeClass("cfm-drop-target");
         try {
-          const d = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain"));
-          if (d.type === "preset") { setItemGroup("presets", d.name, fname); renderPresetsView(); toastr.success(`已将「${d.name}」移入「${fname}」`); }
+          const d = JSON.parse(
+            e.originalEvent.dataTransfer.getData("text/plain"),
+          );
+          if (d.type === "preset") {
+            setItemGroup("presets", d.name, fname);
+            renderPresetsView();
+            toastr.success(`已将「${d.name}」移入「${fname}」`);
+          }
         } catch {}
       });
       leftTree.append(node);
     }
 
-    // 左侧：未分组入口
+    // 左侧：未归类预设入口
     const uncatNode = $(`
       <div class="cfm-tnode cfm-tnode-uncategorized ${selectedPresetFolder === "__ungrouped__" ? "cfm-tnode-selected" : ""}" data-id="__ungrouped__" style="padding-left:10px;">
         <span class="cfm-tnode-arrow cfm-arrow-hidden"><i class="fa-solid fa-caret-right"></i></span>
         <span class="cfm-tnode-icon"><i class="fa-solid fa-box-open"></i></span>
-        <span class="cfm-tnode-label">未分组</span>
+        <span class="cfm-tnode-label">未归类预设</span>
         <span class="cfm-tnode-count">${ungrouped.length}</span>
       </div>
     `);
-    uncatNode.on("click", (e) => { e.preventDefault(); selectedPresetFolder = "__ungrouped__"; renderPresetsView(); });
-    // 拖放到未分组 = 移出分组
-    uncatNode.on("dragover", (e) => { e.preventDefault(); uncatNode.addClass("cfm-drop-target"); });
+    uncatNode.on("click", (e) => {
+      e.preventDefault();
+      selectedPresetFolder = "__ungrouped__";
+      renderPresetsView();
+    });
+    // 拖放到未归类 = 移出文件夹
+    uncatNode.on("dragover", (e) => {
+      e.preventDefault();
+      uncatNode.addClass("cfm-drop-target");
+    });
     uncatNode.on("dragleave", () => uncatNode.removeClass("cfm-drop-target"));
     uncatNode.on("drop", (e) => {
-      e.preventDefault(); uncatNode.removeClass("cfm-drop-target");
+      e.preventDefault();
+      uncatNode.removeClass("cfm-drop-target");
       try {
-        const d = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain"));
-        if (d.type === "preset") { setItemGroup("presets", d.name, null); renderPresetsView(); toastr.success(`已将「${d.name}」移出分组`); }
+        const d = JSON.parse(
+          e.originalEvent.dataTransfer.getData("text/plain"),
+        );
+        if (d.type === "preset") {
+          setItemGroup("presets", d.name, null);
+          renderPresetsView();
+          toastr.success(`已将「${d.name}」移出文件夹`);
+        }
       } catch {}
     });
     leftTree.append(uncatNode);
@@ -3361,14 +3625,11 @@ jQuery(async () => {
     const currentVal = pm && pm.select ? pm.select.val() : null;
 
     let displayItems = [];
-    let displayTitle = "选择左侧分组查看内容";
+    let displayTitle = "选择左侧文件夹查看内容";
 
-    if (selectedPresetFolder === "__all__") {
-      displayItems = presets;
-      displayTitle = `全部预设 (${apiId})`;
-    } else if (selectedPresetFolder === "__ungrouped__") {
+    if (selectedPresetFolder === "__ungrouped__") {
       displayItems = ungrouped;
-      displayTitle = "未分组预设";
+      displayTitle = "未归类预设";
     } else if (selectedPresetFolder && folders.includes(selectedPresetFolder)) {
       displayItems = folderItems[selectedPresetFolder] || [];
       displayTitle = selectedPresetFolder;
@@ -3378,9 +3639,11 @@ jQuery(async () => {
     countEl.text(selectedPresetFolder ? `${displayItems.length} 个预设` : "");
 
     if (!selectedPresetFolder) {
-      rightList.html('<div class="cfm-right-empty">← 点击左侧分组查看内容</div>');
+      rightList.html(
+        '<div class="cfm-right-empty">← 点击左侧文件夹查看内容</div>',
+      );
     } else if (displayItems.length === 0) {
-      rightList.html('<div class="cfm-right-empty">此分组为空</div>');
+      rightList.html('<div class="cfm-right-empty">此文件夹为空</div>');
     } else {
       for (const p of displayItems) {
         const isActive = p.value === currentVal;
@@ -3392,24 +3655,33 @@ jQuery(async () => {
         `);
         row.on("click", () => {
           applyPreset(p.value);
-          rightList.find(".cfm-rv-item-active").removeClass("cfm-rv-item-active");
+          rightList
+            .find(".cfm-rv-item-active")
+            .removeClass("cfm-rv-item-active");
           row.addClass("cfm-rv-item-active");
           toastr.success(`已应用预设「${p.name}」`);
         });
         row.on("dragstart", (e) => {
-          e.originalEvent.dataTransfer.setData("text/plain", JSON.stringify({ type: "preset", name: p.name, value: p.value }));
+          e.originalEvent.dataTransfer.setData(
+            "text/plain",
+            JSON.stringify({ type: "preset", name: p.name, value: p.value }),
+          );
         });
         rightList.append(row);
       }
     }
 
     // 搜索
-    $("#cfm-preset-search").off("input").on("input", function () {
-      const q = $(this).val().toLowerCase();
-      rightList.find(".cfm-row").each(function () {
-        $(this).toggle($(this).find(".cfm-row-name").text().toLowerCase().includes(q));
+    $("#cfm-preset-search")
+      .off("input")
+      .on("input", function () {
+        const q = $(this).val().toLowerCase();
+        rightList.find(".cfm-row").each(function () {
+          $(this).toggle(
+            $(this).find(".cfm-row-name").text().toLowerCase().includes(q),
+          );
+        });
       });
-    });
   }
 
   // ==================== 世界书视图渲染（双栏） ====================
@@ -3419,24 +3691,31 @@ jQuery(async () => {
     const pathEl = $("#cfm-worldinfo-rh-path");
     const countEl = $("#cfm-worldinfo-rh-count");
     leftTree.empty();
-    rightList.html('<div class="cfm-right-empty"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>');
+    rightList.html(
+      '<div class="cfm-right-empty"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>',
+    );
 
     const names = await getWorldInfoNames();
     const groups = getResourceGroups("worldinfo");
     const folders = getResourceFolders("worldinfo");
 
-    // 新建分组按钮事件
-    $(".cfm-worldinfo-add-folder").off("click touchend").on("click touchend", (e) => {
-      e.preventDefault();
-      const name = prompt("输入分组名称：");
-      if (!name || !name.trim()) return;
-      const f = getResourceFolders("worldinfo");
-      if (f.includes(name.trim())) { toastr.warning("分组已存在"); return; }
-      f.push(name.trim());
-      setResourceFolders("worldinfo", f);
-      renderWorldInfoView();
-      toastr.success(`已创建分组「${name.trim()}」`);
-    });
+    // 新建文件夹按钮事件
+    $(".cfm-worldinfo-add-folder")
+      .off("click touchend")
+      .on("click touchend", (e) => {
+        e.preventDefault();
+        const name = prompt("输入文件夹名称：");
+        if (!name || !name.trim()) return;
+        const f = getResourceFolders("worldinfo");
+        if (f.includes(name.trim())) {
+          toastr.warning("文件夹已存在");
+          return;
+        }
+        f.push(name.trim());
+        setResourceFolders("worldinfo", f);
+        renderWorldInfoView();
+        toastr.success(`已创建文件夹「${name.trim()}」`);
+      });
 
     // 分类
     const folderItems = {};
@@ -3453,19 +3732,7 @@ jQuery(async () => {
 
     leftTree.empty();
 
-    // 左侧：全部入口
-    const allNode = $(`
-      <div class="cfm-tnode ${selectedWorldInfoFolder === "__all__" ? "cfm-tnode-selected" : ""}" data-id="__all__" style="padding-left:10px;">
-        <span class="cfm-tnode-arrow cfm-arrow-hidden"><i class="fa-solid fa-caret-right"></i></span>
-        <span class="cfm-tnode-icon"><i class="fa-solid fa-book-atlas"></i></span>
-        <span class="cfm-tnode-label">全部世界书</span>
-        <span class="cfm-tnode-count">${names.length}</span>
-      </div>
-    `);
-    allNode.on("click", (e) => { e.preventDefault(); selectedWorldInfoFolder = "__all__"; renderWorldInfoView(); });
-    leftTree.append(allNode);
-
-    // 左侧：各分组
+    // 左侧：各文件夹
     for (const fname of folders) {
       const items = folderItems[fname] || [];
       const isSelected = selectedWorldInfoFolder === fname;
@@ -3477,36 +3744,64 @@ jQuery(async () => {
           <span class="cfm-tnode-count">${items.length}</span>
         </div>
       `);
-      node.on("click", (e) => { e.preventDefault(); selectedWorldInfoFolder = fname; renderWorldInfoView(); });
-      node.on("dragover", (e) => { e.preventDefault(); node.addClass("cfm-drop-target"); });
+      node.on("click", (e) => {
+        e.preventDefault();
+        selectedWorldInfoFolder = fname;
+        renderWorldInfoView();
+      });
+      node.on("dragover", (e) => {
+        e.preventDefault();
+        node.addClass("cfm-drop-target");
+      });
       node.on("dragleave", () => node.removeClass("cfm-drop-target"));
       node.on("drop", (e) => {
-        e.preventDefault(); node.removeClass("cfm-drop-target");
+        e.preventDefault();
+        node.removeClass("cfm-drop-target");
         try {
-          const d = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain"));
-          if (d.type === "worldinfo") { setItemGroup("worldinfo", d.name, fname); renderWorldInfoView(); toastr.success(`已将「${d.name}」移入「${fname}」`); }
+          const d = JSON.parse(
+            e.originalEvent.dataTransfer.getData("text/plain"),
+          );
+          if (d.type === "worldinfo") {
+            setItemGroup("worldinfo", d.name, fname);
+            renderWorldInfoView();
+            toastr.success(`已将「${d.name}」移入「${fname}」`);
+          }
         } catch {}
       });
       leftTree.append(node);
     }
 
-    // 左侧：未分组入口
+    // 左侧：未归类世界书入口
     const uncatNode = $(`
       <div class="cfm-tnode cfm-tnode-uncategorized ${selectedWorldInfoFolder === "__ungrouped__" ? "cfm-tnode-selected" : ""}" data-id="__ungrouped__" style="padding-left:10px;">
         <span class="cfm-tnode-arrow cfm-arrow-hidden"><i class="fa-solid fa-caret-right"></i></span>
         <span class="cfm-tnode-icon"><i class="fa-solid fa-box-open"></i></span>
-        <span class="cfm-tnode-label">未分组</span>
+        <span class="cfm-tnode-label">未归类世界书</span>
         <span class="cfm-tnode-count">${ungrouped.length}</span>
       </div>
     `);
-    uncatNode.on("click", (e) => { e.preventDefault(); selectedWorldInfoFolder = "__ungrouped__"; renderWorldInfoView(); });
-    uncatNode.on("dragover", (e) => { e.preventDefault(); uncatNode.addClass("cfm-drop-target"); });
+    uncatNode.on("click", (e) => {
+      e.preventDefault();
+      selectedWorldInfoFolder = "__ungrouped__";
+      renderWorldInfoView();
+    });
+    uncatNode.on("dragover", (e) => {
+      e.preventDefault();
+      uncatNode.addClass("cfm-drop-target");
+    });
     uncatNode.on("dragleave", () => uncatNode.removeClass("cfm-drop-target"));
     uncatNode.on("drop", (e) => {
-      e.preventDefault(); uncatNode.removeClass("cfm-drop-target");
+      e.preventDefault();
+      uncatNode.removeClass("cfm-drop-target");
       try {
-        const d = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain"));
-        if (d.type === "worldinfo") { setItemGroup("worldinfo", d.name, null); renderWorldInfoView(); toastr.success(`已将「${d.name}」移出分组`); }
+        const d = JSON.parse(
+          e.originalEvent.dataTransfer.getData("text/plain"),
+        );
+        if (d.type === "worldinfo") {
+          setItemGroup("worldinfo", d.name, null);
+          renderWorldInfoView();
+          toastr.success(`已将「${d.name}」移出文件夹`);
+        }
       } catch {}
     });
     leftTree.append(uncatNode);
@@ -3514,26 +3809,30 @@ jQuery(async () => {
     // 右侧渲染
     rightList.empty();
     let displayItems = [];
-    let displayTitle = "选择左侧分组查看内容";
+    let displayTitle = "选择左侧文件夹查看内容";
 
-    if (selectedWorldInfoFolder === "__all__") {
-      displayItems = names;
-      displayTitle = "全部世界书";
-    } else if (selectedWorldInfoFolder === "__ungrouped__") {
+    if (selectedWorldInfoFolder === "__ungrouped__") {
       displayItems = ungrouped;
-      displayTitle = "未分组世界书";
-    } else if (selectedWorldInfoFolder && folders.includes(selectedWorldInfoFolder)) {
+      displayTitle = "未归类世界书";
+    } else if (
+      selectedWorldInfoFolder &&
+      folders.includes(selectedWorldInfoFolder)
+    ) {
       displayItems = folderItems[selectedWorldInfoFolder] || [];
       displayTitle = selectedWorldInfoFolder;
     }
 
     pathEl.text(displayTitle);
-    countEl.text(selectedWorldInfoFolder ? `${displayItems.length} 个世界书` : "");
+    countEl.text(
+      selectedWorldInfoFolder ? `${displayItems.length} 个世界书` : "",
+    );
 
     if (!selectedWorldInfoFolder) {
-      rightList.html('<div class="cfm-right-empty">← 点击左侧分组查看内容</div>');
+      rightList.html(
+        '<div class="cfm-right-empty">← 点击左侧文件夹查看内容</div>',
+      );
     } else if (displayItems.length === 0) {
-      rightList.html('<div class="cfm-right-empty">此分组为空</div>');
+      rightList.html('<div class="cfm-right-empty">此文件夹为空</div>');
     } else {
       for (const n of displayItems) {
         const row = $(`
@@ -3542,21 +3841,30 @@ jQuery(async () => {
             <div class="cfm-row-name">${escapeHtml(n)}</div>
           </div>
         `);
-        row.on("click", () => { openWorldInfoEditor(n); });
+        row.on("click", () => {
+          openWorldInfoEditor(n);
+        });
         row.on("dragstart", (e) => {
-          e.originalEvent.dataTransfer.setData("text/plain", JSON.stringify({ type: "worldinfo", name: n }));
+          e.originalEvent.dataTransfer.setData(
+            "text/plain",
+            JSON.stringify({ type: "worldinfo", name: n }),
+          );
         });
         rightList.append(row);
       }
     }
 
     // 搜索
-    $("#cfm-worldinfo-search").off("input").on("input", function () {
-      const q = $(this).val().toLowerCase();
-      rightList.find(".cfm-row").each(function () {
-        $(this).toggle($(this).find(".cfm-row-name").text().toLowerCase().includes(q));
+    $("#cfm-worldinfo-search")
+      .off("input")
+      .on("input", function () {
+        const q = $(this).val().toLowerCase();
+        rightList.find(".cfm-row").each(function () {
+          $(this).toggle(
+            $(this).find(".cfm-row-name").text().toLowerCase().includes(q),
+          );
+        });
       });
-    });
   }
 
   // ==================== 初始化 ====================
