@@ -1337,6 +1337,14 @@ jQuery(async () => {
   let expandedNodes = new Set(); // 左侧树展开状态
   let configExpandedNodes = new Set(); // 配置弹窗树展开状态
 
+  // 预设/世界书双栏状态
+  let selectedPresetFolder = null;
+  let selectedWorldInfoFolder = null;
+  let presetExpandedNodes = new Set();
+  let worldInfoExpandedNodes = new Set();
+  let presetConfigExpandedNodes = new Set();
+  let worldInfoConfigExpandedNodes = new Set();
+
   // ==================== 排序状态管理 ====================
   let sortDirty = false; // 是否有未确认的排序操作
   let sortSnapshot = null; // 排序前的快照 { folderId: sortOrder, ... }
@@ -1404,8 +1412,52 @@ jQuery(async () => {
                         </div>
                     </div>
                 </div>
-                <div class="cfm-resource-view" id="cfm-presets-view" style="display:none;"></div>
-                <div class="cfm-resource-view" id="cfm-worldinfo-view" style="display:none;"></div>
+                <div class="cfm-dual-pane" id="cfm-presets-view" style="display:none;">
+                    <div class="cfm-left-pane">
+                        <div class="cfm-left-header">
+                            <span>分组</span>
+                            <span class="cfm-left-header-actions">
+                                <button class="cfm-preset-add-folder" title="新建分组"><i class="fa-solid fa-folder-plus"></i></button>
+                            </span>
+                        </div>
+                        <div class="cfm-left-tree" id="cfm-preset-left-tree"></div>
+                    </div>
+                    <div class="cfm-right-pane">
+                        <div class="cfm-right-header">
+                            <span class="cfm-rh-path" id="cfm-preset-rh-path">选择左侧分组查看内容</span>
+                            <span class="cfm-rh-count" id="cfm-preset-rh-count"></span>
+                        </div>
+                        <div class="cfm-right-search-bar">
+                            <input type="text" class="cfm-rv-search" id="cfm-preset-search" placeholder="搜索预设..." />
+                        </div>
+                        <div class="cfm-right-list" id="cfm-preset-right-list">
+                            <div class="cfm-right-empty">← 点击左侧分组查看内容</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="cfm-dual-pane" id="cfm-worldinfo-view" style="display:none;">
+                    <div class="cfm-left-pane">
+                        <div class="cfm-left-header">
+                            <span>分组</span>
+                            <span class="cfm-left-header-actions">
+                                <button class="cfm-worldinfo-add-folder" title="新建分组"><i class="fa-solid fa-folder-plus"></i></button>
+                            </span>
+                        </div>
+                        <div class="cfm-left-tree" id="cfm-worldinfo-left-tree"></div>
+                    </div>
+                    <div class="cfm-right-pane">
+                        <div class="cfm-right-header">
+                            <span class="cfm-rh-path" id="cfm-worldinfo-rh-path">选择左侧分组查看内容</span>
+                            <span class="cfm-rh-count" id="cfm-worldinfo-rh-count"></span>
+                        </div>
+                        <div class="cfm-right-search-bar">
+                            <input type="text" class="cfm-rv-search" id="cfm-worldinfo-search" placeholder="搜索世界书..." />
+                        </div>
+                        <div class="cfm-right-list" id="cfm-worldinfo-right-list">
+                            <div class="cfm-right-empty">← 点击左侧分组查看内容</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         `);
     overlay.append(popup);
@@ -1425,7 +1477,8 @@ jQuery(async () => {
       popup.find("#cfm-worldinfo-view").toggle(tab === "worldinfo");
       // 切换header按钮可见性
       popup.find("#cfm-btn-copymode").toggle(tab === "chars");
-      popup.find("#cfm-btn-config").toggle(tab === "chars");
+      // 全局搜索栏仅在角色卡tab显示
+      popup.find("#cfm-global-search-bar").toggle(tab === "chars");
       if (tab === "presets") renderPresetsView();
       else if (tab === "worldinfo") renderWorldInfoView();
     });
@@ -3204,34 +3257,32 @@ jQuery(async () => {
     toastr.success(msg);
   }
 
-  // ==================== 预设视图渲染 ====================
+  // ==================== 预设视图渲染（双栏） ====================
   function renderPresetsView() {
-    const container = $("#cfm-presets-view");
-    container.empty();
-    const apiId = getCurrentPresetApiId();
+    const leftTree = $("#cfm-preset-left-tree");
+    const rightList = $("#cfm-preset-right-list");
+    const pathEl = $("#cfm-preset-rh-path");
+    const countEl = $("#cfm-preset-rh-count");
+    leftTree.empty();
+    const folders = getResourceFolders("presets");
     const presets = getCurrentPresets();
     const groups = getResourceGroups("presets");
-    const folders = getResourceFolders("presets");
+    const apiId = getCurrentPresetApiId();
 
-    // 当前选中的预设值
-    const pm = getContext().getPresetManager();
-    const currentVal = pm && pm.select ? pm.select.val() : null;
+    // 新建分组按钮事件
+    $(".cfm-preset-add-folder").off("click touchend").on("click touchend", (e) => {
+      e.preventDefault();
+      const name = prompt("输入分组名称：");
+      if (!name || !name.trim()) return;
+      const f = getResourceFolders("presets");
+      if (f.includes(name.trim())) { toastr.warning("分组已存在"); return; }
+      f.push(name.trim());
+      setResourceFolders("presets", f);
+      renderPresetsView();
+      toastr.success(`已创建分组「${name.trim()}」`);
+    });
 
-    const html = $(`
-      <div class="cfm-rv-header">
-        <span class="cfm-rv-title"><i class="fa-solid fa-sliders"></i> 当前API预设 (${escapeHtml(apiId)})</span>
-        <span class="cfm-rv-count">${presets.length} 个预设</span>
-      </div>
-      <div class="cfm-rv-toolbar">
-        <input type="text" class="cfm-rv-search" placeholder="搜索预设..." />
-        <button class="cfm-rv-add-folder cfm-btn cfm-btn-sm"><i class="fa-solid fa-folder-plus"></i> 新建分组</button>
-      </div>
-      <div class="cfm-rv-list"></div>
-    `);
-
-    const list = html.filter(".cfm-rv-list");
-
-    // 按分组渲染
+    // 分类
     const folderItems = {};
     const ungrouped = [];
     for (const p of presets) {
@@ -3244,107 +3295,150 @@ jQuery(async () => {
       }
     }
 
-    // 渲染分组
+    // 左侧：全部入口
+    const allNode = $(`
+      <div class="cfm-tnode ${selectedPresetFolder === "__all__" ? "cfm-tnode-selected" : ""}" data-id="__all__" style="padding-left:10px;">
+        <span class="cfm-tnode-arrow cfm-arrow-hidden"><i class="fa-solid fa-caret-right"></i></span>
+        <span class="cfm-tnode-icon"><i class="fa-solid fa-sliders"></i></span>
+        <span class="cfm-tnode-label">全部预设 (${apiId})</span>
+        <span class="cfm-tnode-count">${presets.length}</span>
+      </div>
+    `);
+    allNode.on("click", (e) => { e.preventDefault(); selectedPresetFolder = "__all__"; renderPresetsView(); });
+    leftTree.append(allNode);
+
+    // 左侧：各分组
     for (const fname of folders) {
       const items = folderItems[fname] || [];
-      const grpEl = $(`
-        <div class="cfm-rv-group">
-          <div class="cfm-rv-group-header" data-folder="${escapeHtml(fname)}">
-            <i class="fa-solid fa-folder"></i> ${escapeHtml(fname)}
-            <span class="cfm-rv-group-count">${items.length}</span>
-            <button class="cfm-rv-del-folder cfm-btn-icon" title="删除分组"><i class="fa-solid fa-xmark"></i></button>
-          </div>
-          <div class="cfm-rv-group-items"></div>
+      const isSelected = selectedPresetFolder === fname;
+      const node = $(`
+        <div class="cfm-tnode ${isSelected ? "cfm-tnode-selected" : ""}" data-id="${escapeHtml(fname)}" style="padding-left:10px;">
+          <span class="cfm-tnode-arrow cfm-arrow-hidden"><i class="fa-solid fa-caret-right"></i></span>
+          <span class="cfm-tnode-icon"><i class="fa-solid fa-folder${isSelected ? "-open" : ""}"></i></span>
+          <span class="cfm-tnode-label">${escapeHtml(fname)}</span>
+          <span class="cfm-tnode-count">${items.length}</span>
         </div>
       `);
-      const itemsEl = grpEl.find(".cfm-rv-group-items");
-      for (const p of items) {
-        const isActive = p.value === currentVal;
-        const item = $(`<div class="cfm-rv-item ${isActive ? "cfm-rv-item-active" : ""}" data-value="${escapeHtml(p.value)}" draggable="true"><i class="fa-solid fa-file-lines"></i> ${escapeHtml(p.name)}</div>`);
-        item.on("click", () => { applyPreset(p.value); container.find(".cfm-rv-item").removeClass("cfm-rv-item-active"); item.addClass("cfm-rv-item-active"); toastr.success(`已应用预设「${p.name}」`); });
-        item.on("dragstart", (e) => { e.originalEvent.dataTransfer.setData("text/plain", JSON.stringify({ type: "preset", name: p.name, value: p.value })); });
-        itemsEl.append(item);
-      }
-      // 分组拖放目标
-      grpEl.find(".cfm-rv-group-header").on("dragover", (e) => { e.preventDefault(); grpEl.addClass("cfm-rv-group-dragover"); });
-      grpEl.find(".cfm-rv-group-header").on("dragleave", () => grpEl.removeClass("cfm-rv-group-dragover"));
-      grpEl.find(".cfm-rv-group-header").on("drop", (e) => {
-        e.preventDefault(); grpEl.removeClass("cfm-rv-group-dragover");
-        try { const d = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain")); if (d.type === "preset") { setItemGroup("presets", d.name, fname); renderPresetsView(); toastr.success(`已将「${d.name}」移入「${fname}」`); } } catch {}
+      node.on("click", (e) => { e.preventDefault(); selectedPresetFolder = fname; renderPresetsView(); });
+      // 拖放目标
+      node.on("dragover", (e) => { e.preventDefault(); node.addClass("cfm-drop-target"); });
+      node.on("dragleave", () => node.removeClass("cfm-drop-target"));
+      node.on("drop", (e) => {
+        e.preventDefault(); node.removeClass("cfm-drop-target");
+        try {
+          const d = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain"));
+          if (d.type === "preset") { setItemGroup("presets", d.name, fname); renderPresetsView(); toastr.success(`已将「${d.name}」移入「${fname}」`); }
+        } catch {}
       });
-      grpEl.find(".cfm-rv-del-folder").on("click", (e) => {
-        e.stopPropagation();
-        const newFolders = folders.filter(f => f !== fname);
-        setResourceFolders("presets", newFolders);
-        // 移除该分组下所有项的分组
-        for (const p of (folderItems[fname] || [])) { setItemGroup("presets", p.name, null); }
-        renderPresetsView();
-        toastr.info(`已删除分组「${fname}」`);
-      });
-      list.append(grpEl);
+      leftTree.append(node);
     }
 
-    // 未分组
-    if (ungrouped.length > 0) {
-      const ugEl = $(`<div class="cfm-rv-group"><div class="cfm-rv-group-header cfm-rv-ungrouped"><i class="fa-solid fa-box-open"></i> 未分组 <span class="cfm-rv-group-count">${ungrouped.length}</span></div><div class="cfm-rv-group-items"></div></div>`);
-      const itemsEl = ugEl.find(".cfm-rv-group-items");
-      for (const p of ungrouped) {
+    // 左侧：未分组入口
+    const uncatNode = $(`
+      <div class="cfm-tnode cfm-tnode-uncategorized ${selectedPresetFolder === "__ungrouped__" ? "cfm-tnode-selected" : ""}" data-id="__ungrouped__" style="padding-left:10px;">
+        <span class="cfm-tnode-arrow cfm-arrow-hidden"><i class="fa-solid fa-caret-right"></i></span>
+        <span class="cfm-tnode-icon"><i class="fa-solid fa-box-open"></i></span>
+        <span class="cfm-tnode-label">未分组</span>
+        <span class="cfm-tnode-count">${ungrouped.length}</span>
+      </div>
+    `);
+    uncatNode.on("click", (e) => { e.preventDefault(); selectedPresetFolder = "__ungrouped__"; renderPresetsView(); });
+    // 拖放到未分组 = 移出分组
+    uncatNode.on("dragover", (e) => { e.preventDefault(); uncatNode.addClass("cfm-drop-target"); });
+    uncatNode.on("dragleave", () => uncatNode.removeClass("cfm-drop-target"));
+    uncatNode.on("drop", (e) => {
+      e.preventDefault(); uncatNode.removeClass("cfm-drop-target");
+      try {
+        const d = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain"));
+        if (d.type === "preset") { setItemGroup("presets", d.name, null); renderPresetsView(); toastr.success(`已将「${d.name}」移出分组`); }
+      } catch {}
+    });
+    leftTree.append(uncatNode);
+
+    // 右侧渲染
+    rightList.empty();
+    const pm = getContext().getPresetManager();
+    const currentVal = pm && pm.select ? pm.select.val() : null;
+
+    let displayItems = [];
+    let displayTitle = "选择左侧分组查看内容";
+
+    if (selectedPresetFolder === "__all__") {
+      displayItems = presets;
+      displayTitle = `全部预设 (${apiId})`;
+    } else if (selectedPresetFolder === "__ungrouped__") {
+      displayItems = ungrouped;
+      displayTitle = "未分组预设";
+    } else if (selectedPresetFolder && folders.includes(selectedPresetFolder)) {
+      displayItems = folderItems[selectedPresetFolder] || [];
+      displayTitle = selectedPresetFolder;
+    }
+
+    pathEl.text(displayTitle);
+    countEl.text(selectedPresetFolder ? `${displayItems.length} 个预设` : "");
+
+    if (!selectedPresetFolder) {
+      rightList.html('<div class="cfm-right-empty">← 点击左侧分组查看内容</div>');
+    } else if (displayItems.length === 0) {
+      rightList.html('<div class="cfm-right-empty">此分组为空</div>');
+    } else {
+      for (const p of displayItems) {
         const isActive = p.value === currentVal;
-        const item = $(`<div class="cfm-rv-item ${isActive ? "cfm-rv-item-active" : ""}" data-value="${escapeHtml(p.value)}" draggable="true"><i class="fa-solid fa-file-lines"></i> ${escapeHtml(p.name)}</div>`);
-        item.on("click", () => { applyPreset(p.value); container.find(".cfm-rv-item").removeClass("cfm-rv-item-active"); item.addClass("cfm-rv-item-active"); toastr.success(`已应用预设「${p.name}」`); });
-        item.on("dragstart", (e) => { e.originalEvent.dataTransfer.setData("text/plain", JSON.stringify({ type: "preset", name: p.name, value: p.value })); });
-        itemsEl.append(item);
+        const row = $(`
+          <div class="cfm-row cfm-row-char ${isActive ? "cfm-rv-item-active" : ""}" data-value="${escapeHtml(p.value)}" draggable="true">
+            <div class="cfm-row-icon"><i class="fa-solid fa-file-lines" style="font-size:20px;color:#8b9dfc;"></i></div>
+            <div class="cfm-row-name">${escapeHtml(p.name)}</div>
+          </div>
+        `);
+        row.on("click", () => {
+          applyPreset(p.value);
+          rightList.find(".cfm-rv-item-active").removeClass("cfm-rv-item-active");
+          row.addClass("cfm-rv-item-active");
+          toastr.success(`已应用预设「${p.name}」`);
+        });
+        row.on("dragstart", (e) => {
+          e.originalEvent.dataTransfer.setData("text/plain", JSON.stringify({ type: "preset", name: p.name, value: p.value }));
+        });
+        rightList.append(row);
       }
-      list.append(ugEl);
     }
 
     // 搜索
-    html.filter(".cfm-rv-toolbar").find(".cfm-rv-search").on("input", function () {
+    $("#cfm-preset-search").off("input").on("input", function () {
       const q = $(this).val().toLowerCase();
-      container.find(".cfm-rv-item").each(function () {
-        $(this).toggle($(this).text().toLowerCase().includes(q));
+      rightList.find(".cfm-row").each(function () {
+        $(this).toggle($(this).find(".cfm-row-name").text().toLowerCase().includes(q));
       });
     });
-
-    // 新建分组
-    html.filter(".cfm-rv-toolbar").find(".cfm-rv-add-folder").on("click", () => {
-      const name = prompt("输入分组名称：");
-      if (!name || !name.trim()) return;
-      const f = getResourceFolders("presets");
-      if (f.includes(name.trim())) { toastr.warning("分组已存在"); return; }
-      f.push(name.trim());
-      setResourceFolders("presets", f);
-      renderPresetsView();
-      toastr.success(`已创建分组「${name.trim()}」`);
-    });
-
-    container.append(html);
   }
 
-  // ==================== 世界书视图渲染 ====================
+  // ==================== 世界书视图渲染（双栏） ====================
   async function renderWorldInfoView() {
-    const container = $("#cfm-worldinfo-view");
-    container.empty();
-    container.html('<div class="cfm-rv-loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>');
+    const leftTree = $("#cfm-worldinfo-left-tree");
+    const rightList = $("#cfm-worldinfo-right-list");
+    const pathEl = $("#cfm-worldinfo-rh-path");
+    const countEl = $("#cfm-worldinfo-rh-count");
+    leftTree.empty();
+    rightList.html('<div class="cfm-right-empty"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>');
 
     const names = await getWorldInfoNames();
     const groups = getResourceGroups("worldinfo");
     const folders = getResourceFolders("worldinfo");
 
-    container.empty();
-    const html = $(`
-      <div class="cfm-rv-header">
-        <span class="cfm-rv-title"><i class="fa-solid fa-book-atlas"></i> 世界书</span>
-        <span class="cfm-rv-count">${names.length} 个世界书</span>
-      </div>
-      <div class="cfm-rv-toolbar">
-        <input type="text" class="cfm-rv-search" placeholder="搜索世界书..." />
-        <button class="cfm-rv-add-folder cfm-btn cfm-btn-sm"><i class="fa-solid fa-folder-plus"></i> 新建分组</button>
-      </div>
-      <div class="cfm-rv-list"></div>
-    `);
+    // 新建分组按钮事件
+    $(".cfm-worldinfo-add-folder").off("click touchend").on("click touchend", (e) => {
+      e.preventDefault();
+      const name = prompt("输入分组名称：");
+      if (!name || !name.trim()) return;
+      const f = getResourceFolders("worldinfo");
+      if (f.includes(name.trim())) { toastr.warning("分组已存在"); return; }
+      f.push(name.trim());
+      setResourceFolders("worldinfo", f);
+      renderWorldInfoView();
+      toastr.success(`已创建分组「${name.trim()}」`);
+    });
 
-    const list = html.filter(".cfm-rv-list");
+    // 分类
     const folderItems = {};
     const ungrouped = [];
     for (const name of names) {
@@ -3357,70 +3451,112 @@ jQuery(async () => {
       }
     }
 
+    leftTree.empty();
+
+    // 左侧：全部入口
+    const allNode = $(`
+      <div class="cfm-tnode ${selectedWorldInfoFolder === "__all__" ? "cfm-tnode-selected" : ""}" data-id="__all__" style="padding-left:10px;">
+        <span class="cfm-tnode-arrow cfm-arrow-hidden"><i class="fa-solid fa-caret-right"></i></span>
+        <span class="cfm-tnode-icon"><i class="fa-solid fa-book-atlas"></i></span>
+        <span class="cfm-tnode-label">全部世界书</span>
+        <span class="cfm-tnode-count">${names.length}</span>
+      </div>
+    `);
+    allNode.on("click", (e) => { e.preventDefault(); selectedWorldInfoFolder = "__all__"; renderWorldInfoView(); });
+    leftTree.append(allNode);
+
+    // 左侧：各分组
     for (const fname of folders) {
       const items = folderItems[fname] || [];
-      const grpEl = $(`
-        <div class="cfm-rv-group">
-          <div class="cfm-rv-group-header" data-folder="${escapeHtml(fname)}">
-            <i class="fa-solid fa-folder"></i> ${escapeHtml(fname)}
-            <span class="cfm-rv-group-count">${items.length}</span>
-            <button class="cfm-rv-del-folder cfm-btn-icon" title="删除分组"><i class="fa-solid fa-xmark"></i></button>
-          </div>
-          <div class="cfm-rv-group-items"></div>
+      const isSelected = selectedWorldInfoFolder === fname;
+      const node = $(`
+        <div class="cfm-tnode ${isSelected ? "cfm-tnode-selected" : ""}" data-id="${escapeHtml(fname)}" style="padding-left:10px;">
+          <span class="cfm-tnode-arrow cfm-arrow-hidden"><i class="fa-solid fa-caret-right"></i></span>
+          <span class="cfm-tnode-icon"><i class="fa-solid fa-folder${isSelected ? "-open" : ""}"></i></span>
+          <span class="cfm-tnode-label">${escapeHtml(fname)}</span>
+          <span class="cfm-tnode-count">${items.length}</span>
         </div>
       `);
-      const itemsEl = grpEl.find(".cfm-rv-group-items");
-      for (const n of items) {
-        const item = $(`<div class="cfm-rv-item" draggable="true"><i class="fa-solid fa-book"></i> ${escapeHtml(n)}</div>`);
-        item.on("click", () => { openWorldInfoEditor(n); toastr.success(`已打开世界书「${n}」`); });
-        item.on("dragstart", (e) => { e.originalEvent.dataTransfer.setData("text/plain", JSON.stringify({ type: "worldinfo", name: n })); });
-        itemsEl.append(item);
-      }
-      grpEl.find(".cfm-rv-group-header").on("dragover", (e) => { e.preventDefault(); grpEl.addClass("cfm-rv-group-dragover"); });
-      grpEl.find(".cfm-rv-group-header").on("dragleave", () => grpEl.removeClass("cfm-rv-group-dragover"));
-      grpEl.find(".cfm-rv-group-header").on("drop", (e) => {
-        e.preventDefault(); grpEl.removeClass("cfm-rv-group-dragover");
-        try { const d = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain")); if (d.type === "worldinfo") { setItemGroup("worldinfo", d.name, fname); renderWorldInfoView(); toastr.success(`已将「${d.name}」移入「${fname}」`); } } catch {}
+      node.on("click", (e) => { e.preventDefault(); selectedWorldInfoFolder = fname; renderWorldInfoView(); });
+      node.on("dragover", (e) => { e.preventDefault(); node.addClass("cfm-drop-target"); });
+      node.on("dragleave", () => node.removeClass("cfm-drop-target"));
+      node.on("drop", (e) => {
+        e.preventDefault(); node.removeClass("cfm-drop-target");
+        try {
+          const d = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain"));
+          if (d.type === "worldinfo") { setItemGroup("worldinfo", d.name, fname); renderWorldInfoView(); toastr.success(`已将「${d.name}」移入「${fname}」`); }
+        } catch {}
       });
-      grpEl.find(".cfm-rv-del-folder").on("click", (e) => {
-        e.stopPropagation();
-        const newFolders = folders.filter(f => f !== fname);
-        setResourceFolders("worldinfo", newFolders);
-        for (const n of (folderItems[fname] || [])) { setItemGroup("worldinfo", n, null); }
-        renderWorldInfoView();
-        toastr.info(`已删除分组「${fname}」`);
-      });
-      list.append(grpEl);
+      leftTree.append(node);
     }
 
-    if (ungrouped.length > 0) {
-      const ugEl = $(`<div class="cfm-rv-group"><div class="cfm-rv-group-header cfm-rv-ungrouped"><i class="fa-solid fa-box-open"></i> 未分组 <span class="cfm-rv-group-count">${ungrouped.length}</span></div><div class="cfm-rv-group-items"></div></div>`);
-      const itemsEl = ugEl.find(".cfm-rv-group-items");
-      for (const n of ungrouped) {
-        const item = $(`<div class="cfm-rv-item" draggable="true"><i class="fa-solid fa-book"></i> ${escapeHtml(n)}</div>`);
-        item.on("click", () => { openWorldInfoEditor(n); toastr.success(`已打开世界书「${n}」`); });
-        item.on("dragstart", (e) => { e.originalEvent.dataTransfer.setData("text/plain", JSON.stringify({ type: "worldinfo", name: n })); });
-        itemsEl.append(item);
-      }
-      list.append(ugEl);
+    // 左侧：未分组入口
+    const uncatNode = $(`
+      <div class="cfm-tnode cfm-tnode-uncategorized ${selectedWorldInfoFolder === "__ungrouped__" ? "cfm-tnode-selected" : ""}" data-id="__ungrouped__" style="padding-left:10px;">
+        <span class="cfm-tnode-arrow cfm-arrow-hidden"><i class="fa-solid fa-caret-right"></i></span>
+        <span class="cfm-tnode-icon"><i class="fa-solid fa-box-open"></i></span>
+        <span class="cfm-tnode-label">未分组</span>
+        <span class="cfm-tnode-count">${ungrouped.length}</span>
+      </div>
+    `);
+    uncatNode.on("click", (e) => { e.preventDefault(); selectedWorldInfoFolder = "__ungrouped__"; renderWorldInfoView(); });
+    uncatNode.on("dragover", (e) => { e.preventDefault(); uncatNode.addClass("cfm-drop-target"); });
+    uncatNode.on("dragleave", () => uncatNode.removeClass("cfm-drop-target"));
+    uncatNode.on("drop", (e) => {
+      e.preventDefault(); uncatNode.removeClass("cfm-drop-target");
+      try {
+        const d = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain"));
+        if (d.type === "worldinfo") { setItemGroup("worldinfo", d.name, null); renderWorldInfoView(); toastr.success(`已将「${d.name}」移出分组`); }
+      } catch {}
+    });
+    leftTree.append(uncatNode);
+
+    // 右侧渲染
+    rightList.empty();
+    let displayItems = [];
+    let displayTitle = "选择左侧分组查看内容";
+
+    if (selectedWorldInfoFolder === "__all__") {
+      displayItems = names;
+      displayTitle = "全部世界书";
+    } else if (selectedWorldInfoFolder === "__ungrouped__") {
+      displayItems = ungrouped;
+      displayTitle = "未分组世界书";
+    } else if (selectedWorldInfoFolder && folders.includes(selectedWorldInfoFolder)) {
+      displayItems = folderItems[selectedWorldInfoFolder] || [];
+      displayTitle = selectedWorldInfoFolder;
     }
 
-    html.filter(".cfm-rv-toolbar").find(".cfm-rv-search").on("input", function () {
+    pathEl.text(displayTitle);
+    countEl.text(selectedWorldInfoFolder ? `${displayItems.length} 个世界书` : "");
+
+    if (!selectedWorldInfoFolder) {
+      rightList.html('<div class="cfm-right-empty">← 点击左侧分组查看内容</div>');
+    } else if (displayItems.length === 0) {
+      rightList.html('<div class="cfm-right-empty">此分组为空</div>');
+    } else {
+      for (const n of displayItems) {
+        const row = $(`
+          <div class="cfm-row cfm-row-char" draggable="true">
+            <div class="cfm-row-icon"><i class="fa-solid fa-book" style="font-size:20px;color:#a6e3a1;"></i></div>
+            <div class="cfm-row-name">${escapeHtml(n)}</div>
+          </div>
+        `);
+        row.on("click", () => { openWorldInfoEditor(n); });
+        row.on("dragstart", (e) => {
+          e.originalEvent.dataTransfer.setData("text/plain", JSON.stringify({ type: "worldinfo", name: n }));
+        });
+        rightList.append(row);
+      }
+    }
+
+    // 搜索
+    $("#cfm-worldinfo-search").off("input").on("input", function () {
       const q = $(this).val().toLowerCase();
-      container.find(".cfm-rv-item").each(function () { $(this).toggle($(this).text().toLowerCase().includes(q)); });
+      rightList.find(".cfm-row").each(function () {
+        $(this).toggle($(this).find(".cfm-row-name").text().toLowerCase().includes(q));
+      });
     });
-    html.filter(".cfm-rv-toolbar").find(".cfm-rv-add-folder").on("click", () => {
-      const name = prompt("输入分组名称：");
-      if (!name || !name.trim()) return;
-      const f = getResourceFolders("worldinfo");
-      if (f.includes(name.trim())) { toastr.warning("分组已存在"); return; }
-      f.push(name.trim());
-      setResourceFolders("worldinfo", f);
-      renderWorldInfoView();
-      toastr.success(`已创建分组「${name.trim()}」`);
-    });
-
-    container.append(html);
   }
 
   // ==================== 初始化 ====================
