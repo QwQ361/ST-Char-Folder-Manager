@@ -3707,7 +3707,7 @@ jQuery(async () => {
               <button class="cfm-btn cfm-btn-sm" id="cfm-res-invert-select"><i class="fa-solid fa-right-left"></i> 反选</button>
               <select id="cfm-res-invert-scope" class="cfm-invert-scope-select" title="反选范围">
                 <option value="all" ${resConfigInvertScope === "all" ? "selected" : ""}>全部文件夹</option>
-                <option value="parent" ${resConfigInvertScope === "parent" ? "selected" : ""}>顶级文件夹</option>
+                <option value="parent" ${resConfigInvertScope === "parent" ? "selected" : ""}>${resConfigSelectedFolderId ? "「" + escapeHtml(getResFolderDisplayName(type, resConfigSelectedFolderId)) + "」的子级" : "顶级文件夹"}</option>
               </select>
             </div>
             <span class="cfm-delete-bar-hint">${resConfigDeleteRangeMode ? "🎯 框选模式已开启：点击起点文件夹，再点击终点文件夹" : "Shift+点击 或开启「框选」按钮可范围选择"}</span>
@@ -4952,7 +4952,11 @@ jQuery(async () => {
 
     pathEl.text(displayTitle);
     const totalItems = childFolders.length + displayItems.length;
-    countEl.text(selectedPresetFolder ? `${totalItems} 项` : "");
+    if (selectedPresetFolder === "__favorites__" || selectedPresetFolder === "__ungrouped__") {
+      countEl.text(`${displayItems.length} 个预设`);
+    } else {
+      countEl.text(selectedPresetFolder ? `${totalItems} 项` : "");
+    }
 
     if (!selectedPresetFolder) {
       rightList.html(
@@ -4962,6 +4966,8 @@ jQuery(async () => {
       rightList.html(
         '<div class="cfm-right-empty">还没有收藏任何预设<br><span style="font-size:12px;opacity:0.5;">点击预设行右侧的 ☆ 按钮添加收藏</span></div>',
       );
+    } else if (selectedPresetFolder === "__ungrouped__" && totalItems === 0) {
+      rightList.html('<div class="cfm-right-empty">没有未归类的预设</div>');
     } else if (totalItems === 0) {
       rightList.html('<div class="cfm-right-empty">此文件夹为空</div>');
     } else {
@@ -5443,7 +5449,11 @@ jQuery(async () => {
 
     pathEl.text(displayTitle);
     const totalItems = childFolders.length + displayItems.length;
-    countEl.text(selectedWorldInfoFolder ? `${totalItems} 项` : "");
+    if (selectedWorldInfoFolder === "__favorites__" || selectedWorldInfoFolder === "__ungrouped__") {
+      countEl.text(`${displayItems.length} 个世界书`);
+    } else {
+      countEl.text(selectedWorldInfoFolder ? `${totalItems} 项` : "");
+    }
 
     if (!selectedWorldInfoFolder) {
       rightList.html(
@@ -5453,6 +5463,8 @@ jQuery(async () => {
       rightList.html(
         '<div class="cfm-right-empty">还没有收藏任何世界书<br><span style="font-size:12px;opacity:0.5;">点击世界书行右侧的 ☆ 按钮添加收藏</span></div>',
       );
+    } else if (selectedWorldInfoFolder === "__ungrouped__" && totalItems === 0) {
+      rightList.html('<div class="cfm-right-empty">没有未归类的世界书</div>');
     } else if (totalItems === 0) {
       rightList.html('<div class="cfm-right-empty">此文件夹为空</div>');
     } else {
