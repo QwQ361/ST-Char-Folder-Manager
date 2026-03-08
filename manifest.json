@@ -1,10 +1,10 @@
 {
-    "display_name": "酒馆资源管理器",
-    "loading_order": 1001,
-    "requires": [],
-    "optional": [],
-    "js": "index.js",
-    "css": "style.css",
-    "author": "Assistant",
-    "version": "1.0.0"
+  "display_name": "酒馆资源管理器",
+  "loading_order": 1001,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "QwQ",
+  "version": "1.0.0"
 }
