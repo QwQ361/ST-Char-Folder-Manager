@@ -4963,7 +4963,58 @@ jQuery(async () => {
           );
           row.addClass("cfm-dragging");
         });
-        row.on("dragend", () => row.removeClass("cfm-dragging"));
+        row.on("dragend", () => {
+          row.removeClass("cfm-dragging");
+          $(".cfm-row").removeClass("cfm-drop-target cfm-drop-before cfm-drop-after cfm-drop-forbidden");
+        });
+        // 右侧子文件夹行也是拖放目标（三区域：before/into/after）
+        row.on("dragover", (e) => {
+          e.preventDefault();
+          row.removeClass("cfm-drop-target cfm-drop-before cfm-drop-after cfm-drop-forbidden");
+          const rect = row[0].getBoundingClientRect();
+          const relY = (e.originalEvent.clientY - rect.top) / rect.height;
+          let zone = relY < 0.25 ? "before" : relY > 0.75 ? "after" : "into";
+          row.data("dropZone", zone);
+          let data = {};
+          try { data = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain") || "{}"); } catch {}
+          if (data.type === "res-folder" && data.resType === "presets") {
+            if (data.id === childId) { row.addClass("cfm-drop-forbidden"); return; }
+            if (zone === "into" && wouldCreateResCycle("presets", data.id, childId)) { row.addClass("cfm-drop-forbidden"); return; }
+          }
+          if (zone === "before") row.addClass("cfm-drop-before");
+          else if (zone === "after") row.addClass("cfm-drop-after");
+          else row.addClass("cfm-drop-target");
+          e.originalEvent.dataTransfer.dropEffect = "move";
+        });
+        row.on("dragleave", () => {
+          row.removeClass("cfm-drop-target cfm-drop-before cfm-drop-after cfm-drop-forbidden");
+        });
+        row.on("drop", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const zone = row.data("dropZone") || "into";
+          row.removeClass("cfm-drop-target cfm-drop-before cfm-drop-after cfm-drop-forbidden");
+          let data;
+          try { data = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain")); } catch { return; }
+          if (data.type === "res-folder" && data.resType === "presets" && data.id !== childId) {
+            if (zone === "into") {
+              if (wouldCreateResCycle("presets", data.id, childId)) { toastr.error("循环嵌套，已阻止"); return; }
+              reorderResFolder("presets", data.id, childId, null);
+              toastr.success(`「${data.id}」已移入「${childId}」`);
+            } else {
+              const pId = tree[childId]?.parentId || null;
+              if (wouldCreateResCycle("presets", data.id, pId)) { toastr.error("循环嵌套，已阻止"); return; }
+              if (zone === "before") { reorderResFolder("presets", data.id, pId, childId); }
+              else { const sibs = sortResFolders("presets", getResChildFolders("presets", pId)); const ci = sibs.indexOf(childId); reorderResFolder("presets", data.id, pId, ci < sibs.length - 1 ? sibs[ci + 1] : null); }
+              toastr.success(`「${data.id}」已排序`);
+            }
+            renderPresetsView();
+          } else if (data.type === "preset") {
+            setItemGroup("presets", data.name, childId);
+            toastr.success(`已将「${data.name}」移入「${childId}」`);
+            renderPresetsView();
+          }
+        });
         touchDragMgr.bind(row, () => ({
           type: "res-folder",
           resType: "presets",
@@ -5019,6 +5070,43 @@ jQuery(async () => {
         }));
         rightList.append(row);
       }
+    }
+
+    // 右侧列表本身也是拖放目标（拖到空白区域 = 放入当前文件夹）
+    if (selectedPresetFolder && selectedPresetFolder !== "__ungrouped__" && selectedPresetFolder !== "__favorites__" && tree[selectedPresetFolder]) {
+      const currentFolder = selectedPresetFolder;
+      rightList.on("dragover", (e) => {
+        if ($(e.target).closest(".cfm-row").length > 0) return;
+        e.preventDefault();
+        rightList.addClass("cfm-right-list-drop-target");
+        e.originalEvent.dataTransfer.dropEffect = "move";
+      });
+      rightList.on("dragleave", (e) => {
+        if ($(e.relatedTarget).closest("#cfm-preset-right-list").length === 0) {
+          rightList.removeClass("cfm-right-list-drop-target");
+        }
+      });
+      rightList.on("drop", (e) => {
+        if ($(e.target).closest(".cfm-row").length > 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        rightList.removeClass("cfm-right-list-drop-target");
+        let data;
+        try { data = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain")); } catch { return; }
+        if (data.type === "res-folder" && data.resType === "presets" && data.id !== currentFolder) {
+          if (wouldCreateResCycle("presets", data.id, currentFolder)) {
+            toastr.error("循环嵌套，已阻止");
+            return;
+          }
+          reorderResFolder("presets", data.id, currentFolder, null);
+          toastr.success(`「${data.id}」已移入「${currentFolder}」`);
+          renderPresetsView();
+        } else if (data.type === "preset") {
+          setItemGroup("presets", data.name, currentFolder);
+          toastr.success(`已将「${data.name}」移入「${currentFolder}」`);
+          renderPresetsView();
+        }
+      });
     }
   }
 
@@ -5366,7 +5454,58 @@ jQuery(async () => {
           );
           row.addClass("cfm-dragging");
         });
-        row.on("dragend", () => row.removeClass("cfm-dragging"));
+        row.on("dragend", () => {
+          row.removeClass("cfm-dragging");
+          $(".cfm-row").removeClass("cfm-drop-target cfm-drop-before cfm-drop-after cfm-drop-forbidden");
+        });
+        // 右侧子文件夹行也是拖放目标（三区域：before/into/after）
+        row.on("dragover", (e) => {
+          e.preventDefault();
+          row.removeClass("cfm-drop-target cfm-drop-before cfm-drop-after cfm-drop-forbidden");
+          const rect = row[0].getBoundingClientRect();
+          const relY = (e.originalEvent.clientY - rect.top) / rect.height;
+          let zone = relY < 0.25 ? "before" : relY > 0.75 ? "after" : "into";
+          row.data("dropZone", zone);
+          let data = {};
+          try { data = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain") || "{}"); } catch {}
+          if (data.type === "res-folder" && data.resType === "worldinfo") {
+            if (data.id === childId) { row.addClass("cfm-drop-forbidden"); return; }
+            if (zone === "into" && wouldCreateResCycle("worldinfo", data.id, childId)) { row.addClass("cfm-drop-forbidden"); return; }
+          }
+          if (zone === "before") row.addClass("cfm-drop-before");
+          else if (zone === "after") row.addClass("cfm-drop-after");
+          else row.addClass("cfm-drop-target");
+          e.originalEvent.dataTransfer.dropEffect = "move";
+        });
+        row.on("dragleave", () => {
+          row.removeClass("cfm-drop-target cfm-drop-before cfm-drop-after cfm-drop-forbidden");
+        });
+        row.on("drop", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const zone = row.data("dropZone") || "into";
+          row.removeClass("cfm-drop-target cfm-drop-before cfm-drop-after cfm-drop-forbidden");
+          let data;
+          try { data = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain")); } catch { return; }
+          if (data.type === "res-folder" && data.resType === "worldinfo" && data.id !== childId) {
+            if (zone === "into") {
+              if (wouldCreateResCycle("worldinfo", data.id, childId)) { toastr.error("循环嵌套，已阻止"); return; }
+              reorderResFolder("worldinfo", data.id, childId, null);
+              toastr.success(`「${data.id}」已移入「${childId}」`);
+            } else {
+              const pId = tree[childId]?.parentId || null;
+              if (wouldCreateResCycle("worldinfo", data.id, pId)) { toastr.error("循环嵌套，已阻止"); return; }
+              if (zone === "before") { reorderResFolder("worldinfo", data.id, pId, childId); }
+              else { const sibs = sortResFolders("worldinfo", getResChildFolders("worldinfo", pId)); const ci = sibs.indexOf(childId); reorderResFolder("worldinfo", data.id, pId, ci < sibs.length - 1 ? sibs[ci + 1] : null); }
+              toastr.success(`「${data.id}」已排序`);
+            }
+            renderWorldInfoView();
+          } else if (data.type === "worldinfo") {
+            setItemGroup("worldinfo", data.name, childId);
+            toastr.success(`已将「${data.name}」移入「${childId}」`);
+            renderWorldInfoView();
+          }
+        });
         touchDragMgr.bind(row, () => ({
           type: "res-folder",
           resType: "worldinfo",
@@ -5416,6 +5555,43 @@ jQuery(async () => {
         }));
         rightList.append(row);
       }
+    }
+
+    // 右侧列表本身也是拖放目标（拖到空白区域 = 放入当前文件夹）
+    if (selectedWorldInfoFolder && selectedWorldInfoFolder !== "__ungrouped__" && selectedWorldInfoFolder !== "__favorites__" && tree[selectedWorldInfoFolder]) {
+      const currentFolder = selectedWorldInfoFolder;
+      rightList.on("dragover", (e) => {
+        if ($(e.target).closest(".cfm-row").length > 0) return;
+        e.preventDefault();
+        rightList.addClass("cfm-right-list-drop-target");
+        e.originalEvent.dataTransfer.dropEffect = "move";
+      });
+      rightList.on("dragleave", (e) => {
+        if ($(e.relatedTarget).closest("#cfm-worldinfo-right-list").length === 0) {
+          rightList.removeClass("cfm-right-list-drop-target");
+        }
+      });
+      rightList.on("drop", (e) => {
+        if ($(e.target).closest(".cfm-row").length > 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        rightList.removeClass("cfm-right-list-drop-target");
+        let data;
+        try { data = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain")); } catch { return; }
+        if (data.type === "res-folder" && data.resType === "worldinfo" && data.id !== currentFolder) {
+          if (wouldCreateResCycle("worldinfo", data.id, currentFolder)) {
+            toastr.error("循环嵌套，已阻止");
+            return;
+          }
+          reorderResFolder("worldinfo", data.id, currentFolder, null);
+          toastr.success(`「${data.id}」已移入「${currentFolder}」`);
+          renderWorldInfoView();
+        } else if (data.type === "worldinfo") {
+          setItemGroup("worldinfo", data.name, currentFolder);
+          toastr.success(`已将「${data.name}」移入「${currentFolder}」`);
+          renderWorldInfoView();
+        }
+      });
     }
   }
 
