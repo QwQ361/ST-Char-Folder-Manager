@@ -1718,6 +1718,10 @@ jQuery(async () => {
     config = loadConfig(); // 刷新配置
     selectedTreeNode = null;
     expandedNodes.clear();
+    selectedPresetFolder = null;
+    selectedWorldInfoFolder = null;
+    presetExpandedNodes.clear();
+    worldInfoExpandedNodes.clear();
 
     const overlay = $('<div id="cfm-overlay"></div>');
     const popup = $(`
