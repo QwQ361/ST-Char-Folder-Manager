@@ -1378,6 +1378,11 @@
     font-size: 12px;
     cursor: pointer;
     flex-shrink: 0;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+    background-image: none !important;
+    text-align: center;
 }
 .cfm-search-select:focus {
     outline: none;
