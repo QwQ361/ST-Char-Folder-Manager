@@ -719,7 +719,7 @@ jQuery(async () => {
             const g = document.createElement("div");
             g.className = "cfm-touch-ghost";
             g.textContent =
-              (data.type === "folder" ? "📁 " : "👤 ") + (data.name || "");
+              (data.type === "folder" || data.type === "res-folder" ? "📁 " : data.type === "preset" ? "📄 " : data.type === "worldinfo" ? "📖 " : "👤 ") + (data.name || "");
             g.style.left = sx + "px";
             g.style.top = sy - 50 + "px";
             document.body.appendChild(g);
@@ -822,7 +822,7 @@ jQuery(async () => {
       }
 
       // 禁止检测
-      if (this.data.type === "folder" && this.data.id === targetId) {
+      if ((this.data.type === "folder" || this.data.type === "res-folder") && this.data.id === targetId) {
         target.classList.add("cfm-drop-forbidden");
         this._lastTarget = target;
         return;
@@ -832,6 +832,16 @@ jQuery(async () => {
         zone === "into" &&
         targetId &&
         wouldCreateCycle(this.data.id, targetId)
+      ) {
+        target.classList.add("cfm-drop-forbidden");
+        this._lastTarget = target;
+        return;
+      }
+      if (
+        this.data.type === "res-folder" &&
+        zone === "into" &&
+        targetId &&
+        wouldCreateResCycle(this.data.resType, this.data.id, targetId)
       ) {
         target.classList.add("cfm-drop-forbidden");
         this._lastTarget = target;
@@ -947,6 +957,74 @@ jQuery(async () => {
           );
           renderLeftTree();
           renderRightPane();
+        }
+      } else if (d.type === "res-folder") {
+        const resType = d.resType;
+        const resTree = getResFolderTree(resType);
+        if (uncatNode) return;
+        if (targetId && targetId !== d.id) {
+          if (zone === "into") {
+            if (wouldCreateResCycle(resType, d.id, targetId)) {
+              toastr.error("循环嵌套，已阻止");
+              return;
+            }
+            reorderResFolder(resType, d.id, targetId, null);
+            toastr.success(`「${d.name}」已移入「${targetId}」`);
+          } else {
+            const pId = resTree[targetId]?.parentId || null;
+            if (wouldCreateResCycle(resType, d.id, pId)) {
+              toastr.error("循环嵌套，已阻止");
+              return;
+            }
+            if (zone === "before") {
+              reorderResFolder(resType, d.id, pId, targetId);
+            } else {
+              const sibs = sortResFolders(resType, getResChildFolders(resType, pId));
+              const ci = sibs.indexOf(targetId);
+              reorderResFolder(resType, d.id, pId, ci < sibs.length - 1 ? sibs[ci + 1] : null);
+            }
+            toastr.success(`「${d.name}」已排序`);
+          }
+          if (resType === "presets") renderPresetsView();
+          else renderWorldInfoView();
+        } else if (!target && rightList) {
+          const selFolder = resType === "presets" ? selectedPresetFolder : selectedWorldInfoFolder;
+          if (selFolder && selFolder !== "__ungrouped__" && selFolder !== "__favorites__" && d.id !== selFolder) {
+            if (!wouldCreateResCycle(resType, d.id, selFolder)) {
+              reorderResFolder(resType, d.id, selFolder, null);
+              toastr.success(`「${d.name}」已移入「${selFolder}」`);
+              if (resType === "presets") renderPresetsView();
+              else renderWorldInfoView();
+            }
+          }
+        }
+      } else if (d.type === "preset") {
+        if (uncatNode) {
+          setItemGroup("presets", d.name, null);
+          toastr.success(`已将「${d.name}」移出文件夹`);
+          renderPresetsView();
+        } else if (targetId) {
+          setItemGroup("presets", d.name, targetId);
+          toastr.success(`已将「${d.name}」移入「${targetId}」`);
+          renderPresetsView();
+        } else if (!target && rightList && selectedPresetFolder && selectedPresetFolder !== "__ungrouped__" && selectedPresetFolder !== "__favorites__") {
+          setItemGroup("presets", d.name, selectedPresetFolder);
+          toastr.success(`已将「${d.name}」移入「${selectedPresetFolder}」`);
+          renderPresetsView();
+        }
+      } else if (d.type === "worldinfo") {
+        if (uncatNode) {
+          setItemGroup("worldinfo", d.name, null);
+          toastr.success(`已将「${d.name}」移出文件夹`);
+          renderWorldInfoView();
+        } else if (targetId) {
+          setItemGroup("worldinfo", d.name, targetId);
+          toastr.success(`已将「${d.name}」移入「${targetId}」`);
+          renderWorldInfoView();
+        } else if (!target && rightList && selectedWorldInfoFolder && selectedWorldInfoFolder !== "__ungrouped__" && selectedWorldInfoFolder !== "__favorites__") {
+          setItemGroup("worldinfo", d.name, selectedWorldInfoFolder);
+          toastr.success(`已将「${d.name}」移入「${selectedWorldInfoFolder}」`);
+          renderWorldInfoView();
         }
       }
     },
@@ -4886,6 +4964,12 @@ jQuery(async () => {
           row.addClass("cfm-dragging");
         });
         row.on("dragend", () => row.removeClass("cfm-dragging"));
+        touchDragMgr.bind(row, () => ({
+          type: "res-folder",
+          resType: "presets",
+          id: childId,
+          name: getResFolderDisplayName("presets", childId),
+        }));
         rightList.append(row);
       }
       // 预设行（带星标）
@@ -4928,6 +5012,11 @@ jQuery(async () => {
             JSON.stringify({ type: "preset", name: p.name, value: p.value }),
           );
         });
+        touchDragMgr.bind(row, () => ({
+          type: "preset",
+          name: p.name,
+          value: p.value,
+        }));
         rightList.append(row);
       }
     }
@@ -5278,6 +5367,12 @@ jQuery(async () => {
           row.addClass("cfm-dragging");
         });
         row.on("dragend", () => row.removeClass("cfm-dragging"));
+        touchDragMgr.bind(row, () => ({
+          type: "res-folder",
+          resType: "worldinfo",
+          id: childId,
+          name: getResFolderDisplayName("worldinfo", childId),
+        }));
         rightList.append(row);
       }
       // 世界书行（带星标）
@@ -5315,6 +5410,10 @@ jQuery(async () => {
             JSON.stringify({ type: "worldinfo", name: n }),
           );
         });
+        touchDragMgr.bind(row, () => ({
+          type: "worldinfo",
+          name: n,
+        }));
         rightList.append(row);
       }
     }
