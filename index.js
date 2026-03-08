@@ -3320,10 +3320,23 @@ jQuery(async () => {
   }
 
   function closeConfigPopup() {
+    // 重置删除模式状态
+    cfmDeleteMode = false;
+    cfmDeleteSelected.clear();
+    cfmDeleteCascade = false;
+    cfmDeleteLastClickedId = null;
+    cfmDeleteRangeMode = false;
+    resConfigDeleteMode = false;
+    resConfigDeleteSelected.clear();
+    resConfigDeleteCascade = false;
+    resConfigDeleteLastClickedId = null;
+    resConfigDeleteRangeMode = false;
     $("#cfm-config-overlay").remove();
     if ($("#cfm-overlay").length > 0) {
       renderLeftTree();
       renderRightPane();
+      if (currentResourceType === "presets") renderPresetsView();
+      else if (currentResourceType === "worldinfo") renderWorldInfoView();
     }
   }
 
