@@ -57,6 +57,10 @@ jQuery(async () => {
   function getResFolderName(type, folderId) {
     return folderId; // folder name IS the id
   }
+  function getResFolderDisplayName(type, folderId) {
+    const tree = getResFolderTree(type);
+    return tree[folderId]?.displayName || folderId;
+  }
   function getResTopLevelFolders(type) {
     const tree = getResFolderTree(type);
     return Object.keys(tree).filter((id) => !tree[id].parentId);
@@ -141,7 +145,7 @@ jQuery(async () => {
     });
     saveResTree(type);
   }
-  function addResFolder(type, name, parentId) {
+  function addResFolder(type, name, parentId, displayName) {
     const tree = getResFolderTree(type);
     if (tree[name]) return false; // already exists
     const siblings = getResChildFolders(type, parentId || null);
@@ -149,7 +153,9 @@ jQuery(async () => {
       (m, id) => Math.max(m, tree[id]?.sortOrder ?? 0),
       0,
     );
-    tree[name] = { parentId: parentId || null, sortOrder: maxOrder + 1 };
+    const entry = { parentId: parentId || null, sortOrder: maxOrder + 1 };
+    if (displayName && displayName !== name) entry.displayName = displayName;
+    tree[name] = entry;
     saveResTree(type);
     return true;
   }
@@ -3183,6 +3189,10 @@ jQuery(async () => {
   // 预设/世界书配置面板状态
   let resConfigDeleteMode = false;
   let resConfigDeleteSelected = new Set();
+  let resConfigDeleteCascade = false;
+  let resConfigDeleteLastClickedId = null;
+  let resConfigDeleteRangeMode = false;
+  let resConfigInvertScope = "all";
 
   function showConfigPopup() {
     if ($("#cfm-config-overlay").length > 0) return;
@@ -3583,6 +3593,9 @@ jQuery(async () => {
       e.preventDefault();
       resConfigDeleteMode = !resConfigDeleteMode;
       resConfigDeleteSelected.clear();
+      resConfigDeleteCascade = false;
+      resConfigDeleteLastClickedId = null;
+      resConfigDeleteRangeMode = false;
       renderResourceConfigBody(body.empty(), type);
     });
     body.append(batchSection);
@@ -3597,8 +3610,19 @@ jQuery(async () => {
           <div class="cfm-delete-bar-top">
             <div class="cfm-delete-bar-left">
               <button class="cfm-btn cfm-btn-sm" id="cfm-res-select-all"><i class="fa-solid fa-${allSelected ? "square-minus" : "square-check"}"></i> ${allSelected ? "全不选" : "全选"}</button>
-              <button class="cfm-btn cfm-btn-sm" id="cfm-res-invert-select"><i class="fa-solid fa-right-left"></i> 反选</button>
+              <button class="cfm-btn cfm-btn-sm cfm-cascade-btn ${resConfigDeleteCascade ? "cfm-cascade-active" : ""}" id="cfm-res-cascade-toggle" title="开启后，选中父文件夹会自动选中所有子文件夹"><i class="fa-solid fa-sitemap"></i> 级联${resConfigDeleteCascade ? "(开)" : "(关)"}</button>
+              <button class="cfm-btn cfm-btn-sm cfm-range-btn ${resConfigDeleteRangeMode ? "cfm-range-active" : ""}" id="cfm-res-range-toggle" title="框选模式"><i class="fa-solid fa-arrow-down-short-wide"></i> 框选${resConfigDeleteRangeMode ? "(开)" : ""}</button>
             </div>
+          </div>
+          <div class="cfm-delete-bar-row2">
+            <div class="cfm-delete-bar-left">
+              <button class="cfm-btn cfm-btn-sm" id="cfm-res-invert-select"><i class="fa-solid fa-right-left"></i> 反选</button>
+              <select id="cfm-res-invert-scope" class="cfm-invert-scope-select" title="反选范围">
+                <option value="all" ${resConfigInvertScope === "all" ? "selected" : ""}>全部文件夹</option>
+                <option value="parent" ${resConfigInvertScope === "parent" ? "selected" : ""}>顶级文件夹</option>
+              </select>
+            </div>
+            <span class="cfm-delete-bar-hint">${resConfigDeleteRangeMode ? "🎯 框选模式已开启：点击起点文件夹，再点击终点文件夹" : "Shift+点击 或开启「框选」按钮可范围选择"}</span>
           </div>
           ${resConfigDeleteSelected.size > 0 ? `<div class="cfm-delete-bar-bottom"><span>已选中 ${resConfigDeleteSelected.size} 个文件夹</span><button class="cfm-btn cfm-btn-danger" id="cfm-res-confirm-delete" style="padding:4px 14px;"><i class="fa-solid fa-trash-can"></i> 确认删除</button></div>` : ""}
         </div>
@@ -3609,17 +3633,44 @@ jQuery(async () => {
         else allFolderIds.forEach((f) => resConfigDeleteSelected.add(f));
         renderResourceConfigBody(body.empty(), type);
       });
+      deleteBar.find("#cfm-res-cascade-toggle").on("click touchend", (e) => {
+        e.preventDefault();
+        resConfigDeleteCascade = !resConfigDeleteCascade;
+        renderResourceConfigBody(body.empty(), type);
+      });
+      deleteBar.find("#cfm-res-range-toggle").on("click touchend", (e) => {
+        e.preventDefault();
+        resConfigDeleteRangeMode = !resConfigDeleteRangeMode;
+        if (resConfigDeleteRangeMode) resConfigDeleteLastClickedId = null;
+        renderResourceConfigBody(body.empty(), type);
+      });
+      deleteBar.find("#cfm-res-invert-scope").on("change", function () {
+        resConfigInvertScope = $(this).val();
+      });
       deleteBar.find("#cfm-res-invert-select").on("click touchend", (e) => {
         e.preventDefault();
-        for (const f of allFolderIds) {
-          if (resConfigDeleteSelected.has(f)) resConfigDeleteSelected.delete(f);
-          else resConfigDeleteSelected.add(f);
+        // 反选逻辑
+        let targetIds = resConfigInvertScope === "parent"
+          ? getResTopLevelFolders(type)
+          : allFolderIds;
+        for (const id of targetIds) {
+          if (resConfigDeleteSelected.has(id)) resConfigDeleteSelected.delete(id);
+          else {
+            resConfigDeleteSelected.add(id);
+            if (resConfigDeleteCascade) {
+              const addDesc = (pid) => { for (const cid of getResChildFolders(type, pid)) { resConfigDeleteSelected.add(cid); addDesc(cid); } };
+              addDesc(id);
+            }
+          }
         }
         renderResourceConfigBody(body.empty(), type);
       });
       deleteBar.find("#cfm-res-confirm-delete").on("click touchend", (e) => {
         e.preventDefault();
         executeResourceMultiDelete(type);
+        resConfigDeleteCascade = false;
+        resConfigDeleteLastClickedId = null;
+        resConfigDeleteRangeMode = false;
         renderResourceConfigBody(body.empty(), type);
       });
       body.append(deleteBar);
@@ -3680,7 +3731,7 @@ jQuery(async () => {
             ${checkboxHtml}
             ${arrowHtml}
             <span class="cfm-tree-icon"><i class="fa-solid fa-folder"></i></span>
-            <span class="cfm-tree-name">${escapeHtml(folderId)}</span>
+            <span class="cfm-tree-name">${escapeHtml(getResFolderDisplayName(type, folderId))}</span>
             <span class="cfm-tnode-count" style="margin-left:auto;margin-right:8px;">${count}</span>
             ${resConfigDeleteMode ? "" : `<span class="cfm-tree-actions"><button class="cfm-btn-danger cfm-res-remove-folder" data-fname="${escapeHtml(folderId)}" title="删除此文件夹"><i class="fa-solid fa-trash-can"></i></button></span>`}
           </div>
@@ -3696,14 +3747,40 @@ jQuery(async () => {
         });
 
         if (resConfigDeleteMode) {
-          item.on("click touchend", (e) => {
+          const toggleResFolder = (id, forceState) => {
+            const shouldSelect = forceState !== undefined ? forceState : !resConfigDeleteSelected.has(id);
+            if (shouldSelect) resConfigDeleteSelected.add(id);
+            else resConfigDeleteSelected.delete(id);
+            if (resConfigDeleteCascade) {
+              const toggleDesc = (pid) => { for (const cid of getResChildFolders(type, pid)) { if (shouldSelect) resConfigDeleteSelected.add(cid); else resConfigDeleteSelected.delete(cid); toggleDesc(cid); } };
+              toggleDesc(id);
+            }
+          };
+          const handleResDeleteClick = (e) => {
             if ($(e.target).closest(".cfm-config-arrow").length) return;
             e.preventDefault();
-            if (resConfigDeleteSelected.has(folderId))
-              resConfigDeleteSelected.delete(folderId);
-            else resConfigDeleteSelected.add(folderId);
+            if ((e.shiftKey || resConfigDeleteRangeMode) && resConfigDeleteLastClickedId) {
+              const flatList = getResFlatFolderList(type);
+              const lastIdx = flatList.indexOf(resConfigDeleteLastClickedId);
+              const curIdx = flatList.indexOf(folderId);
+              if (lastIdx >= 0 && curIdx >= 0) {
+                const start = Math.min(lastIdx, curIdx);
+                const end = Math.max(lastIdx, curIdx);
+                for (let i = start; i <= end; i++) {
+                  resConfigDeleteSelected.add(flatList[i]);
+                  if (resConfigDeleteCascade) {
+                    const addDesc = (pid) => { for (const cid of getResChildFolders(type, pid)) { resConfigDeleteSelected.add(cid); addDesc(cid); } };
+                    addDesc(flatList[i]);
+                  }
+                }
+              }
+            } else {
+              toggleResFolder(folderId);
+            }
+            resConfigDeleteLastClickedId = folderId;
             renderResourceConfigBody(body.empty(), type);
-          });
+          };
+          item.on("click touchend", handleResDeleteClick);
         } else {
           item.find(".cfm-res-remove-folder").on("click touchend", (e) => {
             e.preventDefault();
@@ -3771,20 +3848,25 @@ jQuery(async () => {
     );
   }
 
-  // 预设/世界书批量创建弹窗
+  // 预设/世界书批量创建弹窗（支持缩进嵌套，与角色卡批量创建一致）
   function showResourceBatchCreatePopup(type) {
     if ($("#cfm-res-batch-overlay").length > 0) return;
     const typeLabel = type === "presets" ? "预设" : "世界书";
+    let smartIndentChildMode = false;
     const overlay = $(
       '<div id="cfm-res-batch-overlay" class="cfm-batch-overlay"></div>',
     );
     const popup = $(`
       <div class="cfm-batch-popup">
-        <div class="cfm-config-header"><h3>📋 批量创建${typeLabel}文件夹</h3><button class="cfm-btn-close" id="cfm-res-batch-close">&times;</button></div>
+        <div class="cfm-config-header"><h3>📋 批量创建文件夹结构</h3><button class="cfm-btn-close" id="cfm-res-batch-close">&times;</button></div>
         <div style="padding:16px;overflow-y:auto;flex:1;min-height:0;">
-          <div class="cfm-create-tag-hint" style="margin-bottom:10px;">每行一个文件夹名称。行首的 <code>-</code> 是可选装饰，会被忽略。示例：</div>
-          <pre style="background:#1a1a2e;color:#aaa;padding:10px;border-radius:6px;font-size:12px;margin-bottom:12px;">常用预设\n测试预设\n备份预设</pre>
-          <textarea id="cfm-res-batch-textarea" rows="10" style="width:100%;font-family:monospace;font-size:13px;background:#23272a;color:#f2f3f5;border:1px solid #4e5058;border-radius:6px;padding:10px;resize:vertical;" placeholder="在此输入文件夹名称，每行一个..."></textarea>
+          <div class="cfm-create-tag-hint" style="margin-bottom:10px;">每行一个标签名，用缩进表示层级（每2个空格深入一层）。<br>行首的 <code>-</code> 是可选装饰，会被忽略。示例：</div>
+          <pre style="background:#1a1a2e;color:#aaa;padding:10px;border-radius:6px;font-size:12px;margin-bottom:12px;">作者A\n  -奇幻\n    -长篇\n    -短篇\n  -科幻\n作者B\n  -日常</pre>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <button id="cfm-res-smart-indent-child" class="cfm-btn" style="font-size:12px;padding:3px 10px;" title="开启后，回车将比当前行多缩进2格（创建子级）。关闭时，回车保持同级缩进。退格键始终回退2个空格。"><i class="fa-solid fa-indent"></i> 添加子级</button>
+            <span style="font-size:11px;opacity:0.5;">Enter 智能缩进 · Backspace 回退层级</span>
+          </div>
+          <textarea id="cfm-res-batch-textarea" rows="12" style="width:100%;font-family:monospace;font-size:13px;background:#23272a;color:#f2f3f5;border:1px solid #4e5058;border-radius:6px;padding:10px;resize:vertical;tab-size:2;" placeholder="在此输入文件夹结构..."></textarea>
           <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px;">
             <button id="cfm-res-batch-preview" class="cfm-btn" style="background:#5865f2;">预览</button>
             <button id="cfm-res-batch-confirm" class="cfm-btn" style="background:#57f287;color:#000;">确认创建</button>
@@ -3801,53 +3883,113 @@ jQuery(async () => {
       overlay.remove();
     });
 
-    const parseNames = () => {
-      const text = popup.find("#cfm-res-batch-textarea").val();
-      return text
-        .split("\n")
-        .map((line) =>
-          line
-            .trim()
-            .replace(/^-+\s*/, "")
-            .trim(),
-        )
-        .filter((name) => name.length > 0);
-    };
+    // 「添加子级」切换按钮
+    const childBtn = popup.find("#cfm-res-smart-indent-child");
+    childBtn.on("click touchend", (e) => {
+      e.preventDefault();
+      smartIndentChildMode = !smartIndentChildMode;
+      childBtn.toggleClass("cfm-smart-indent-active", smartIndentChildMode);
+    });
+
+    // 智能缩进键盘处理
+    popup.find("#cfm-res-batch-textarea").on("keydown", function (e) {
+      const ta = this;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const pos = ta.selectionStart;
+        const val = ta.value;
+        const lineStart = val.lastIndexOf("\n", pos - 1) + 1;
+        const lineText = val.substring(lineStart, pos);
+        const indentMatch = lineText.match(/^(\s*)/);
+        const currentIndent = indentMatch ? indentMatch[1] : "";
+        const newIndent = smartIndentChildMode
+          ? currentIndent + "  "
+          : currentIndent;
+        const insert = "\n" + newIndent;
+        ta.value = val.substring(0, pos) + insert + val.substring(pos);
+        const newPos = pos + insert.length;
+        ta.selectionStart = ta.selectionEnd = newPos;
+      } else if (e.key === "Backspace") {
+        const pos = ta.selectionStart;
+        const val = ta.value;
+        if (pos === ta.selectionEnd && pos > 0) {
+          const lineStart = val.lastIndexOf("\n", pos - 1) + 1;
+          const beforeCursor = val.substring(lineStart, pos);
+          if (/^\s+$/.test(beforeCursor) && beforeCursor.length >= 2) {
+            e.preventDefault();
+            ta.value = val.substring(0, pos - 2) + val.substring(pos);
+            ta.selectionStart = ta.selectionEnd = pos - 2;
+          }
+        }
+      }
+    });
 
     popup.find("#cfm-res-batch-preview").on("click touchend", (e) => {
       e.preventDefault();
-      const names = parseNames();
+      const text = popup.find("#cfm-res-batch-textarea").val();
+      const treeData = parseBatchText(text);
       const area = popup.find("#cfm-res-batch-preview-area");
       area.empty();
-      if (names.length === 0) {
+      if (treeData.length === 0) {
         area.html('<div style="color:#ed4245;">无法解析，请检查格式。</div>');
         return;
       }
       const existingIds = new Set(getResFolderIds(type));
-      let html =
-        '<div style="color:#57f287;margin-bottom:6px;">预览（共 ' +
-        names.length +
-        " 个）：</div>";
-      for (const name of names) {
-        const exists = existingIds.has(name);
-        html += `<div style="font-size:13px;line-height:1.8;${exists ? "color:#ed4245;text-decoration:line-through;" : ""}">📁 ${escapeHtml(name)}${exists ? " (已存在，跳过)" : ""}</div>`;
+      area.html(
+        '<div style="color:#57f287;margin-bottom:6px;">预览结构：</div>',
+      );
+      function renderResPreview(container, nodes, depth) {
+        for (const node of nodes) {
+          const exists = existingIds.has(node.name);
+          container.append(
+            `<div style="padding-left:${depth * 20}px;font-size:13px;line-height:1.8;${exists ? "color:#ed4245;text-decoration:line-through;" : ""}">📁 ${escapeHtml(node.name)}${exists ? " (已存在，跳过)" : ""}</div>`,
+          );
+          if (node.children.length > 0)
+            renderResPreview(container, node.children, depth + 1);
+        }
       }
-      area.html(html);
+      renderResPreview(area, treeData, 0);
     });
 
     popup.find("#cfm-res-batch-confirm").on("click touchend", (e) => {
       e.preventDefault();
-      const names = parseNames();
-      if (names.length === 0) {
+      const text = popup.find("#cfm-res-batch-textarea").val();
+      const treeData = parseBatchText(text);
+      if (treeData.length === 0) {
         toastr.warning("无法解析，请检查格式");
         return;
       }
       let created = 0,
         skipped = 0;
-      for (const name of names) {
-        if (addResFolder(type, name, null)) created++;
+      function processResNode(node, parentId) {
+        let folderName = node.name;
+        const tree = getResFolderTree(type);
+        // 子文件夹始终使用父级前缀
+        if (parentId) {
+          folderName = parentId + "-" + node.name;
+        }
+        // 如果已存在且父级匹配，视为"已存在"，直接用它作为子级的父级
+        if (tree[folderName] && tree[folderName].parentId === (parentId || null)) {
+          skipped++;
+          for (const child of node.children)
+            processResNode(child, folderName);
+          return;
+        }
+        // 如果名称冲突但父级不同，追加数字后缀
+        if (tree[folderName]) {
+          let base = folderName;
+          let counter = 2;
+          while (tree[folderName]) {
+            folderName = base + "_" + counter++;
+          }
+        }
+        const displayName = parentId ? node.name : null;
+        if (addResFolder(type, folderName, parentId, displayName)) created++;
         else skipped++;
+        for (const child of node.children)
+          processResNode(child, folderName);
       }
+      for (const node of treeData) processResNode(node, null);
       overlay.remove();
       let msg = `批量创建完成，共新增 ${created} 个${typeLabel}文件夹`;
       if (skipped > 0) msg += `，${skipped} 个已存在（跳过）`;
@@ -4047,6 +4189,18 @@ jQuery(async () => {
     function dfs(folderId) {
       result.push(folderId);
       const children = sortFolders(getChildFolders(folderId));
+      for (const childId of children) dfs(childId);
+    }
+    for (const fid of topFolders) dfs(fid);
+    return result;
+  }
+
+  function getResFlatFolderList(type) {
+    const result = [];
+    const topFolders = sortResFolders(type, getResTopLevelFolders(type));
+    function dfs(folderId) {
+      result.push(folderId);
+      const children = sortResFolders(type, getResChildFolders(type, folderId));
       for (const childId of children) dfs(childId);
     }
     for (const fid of topFolders) dfs(fid);
@@ -4410,7 +4564,7 @@ jQuery(async () => {
         <div class="cfm-tnode ${isSelected ? "cfm-tnode-selected" : ""}" data-id="${escapeHtml(folderId)}" style="padding-left:${indent}px;" draggable="true">
           <span class="cfm-tnode-arrow ${hasChildren ? (isExpanded ? "cfm-arrow-expanded" : "") : "cfm-arrow-hidden"}"><i class="fa-solid fa-caret-right"></i></span>
           <span class="cfm-tnode-icon"><i class="fa-solid fa-folder${isSelected ? "-open" : ""}"></i></span>
-          <span class="cfm-tnode-label">${escapeHtml(folderId)}</span>
+          <span class="cfm-tnode-label">${escapeHtml(getResFolderDisplayName("presets", folderId))}</span>
           <span class="cfm-tnode-count">${count}</span>
         </div>
       `);
@@ -4642,9 +4796,9 @@ jQuery(async () => {
         "presets",
         getResChildFolders("presets", selectedPresetFolder),
       );
-      const path = getResFolderPath("presets", selectedPresetFolder).join(
-        " › ",
-      );
+      const path = getResFolderPath("presets", selectedPresetFolder).map(
+        (id) => getResFolderDisplayName("presets", id),
+      ).join(" › ");
       displayTitle = path;
     }
 
@@ -4676,7 +4830,7 @@ jQuery(async () => {
         const row = $(`
           <div class="cfm-row cfm-row-folder" data-folder-id="${escapeHtml(childId)}" draggable="true">
             <div class="cfm-row-icon"><i class="fa-solid fa-folder"></i></div>
-            <div class="cfm-row-name">${escapeHtml(childId)}</div>
+            <div class="cfm-row-name">${escapeHtml(getResFolderDisplayName("presets", childId))}</div>
             <div class="cfm-row-meta">${childCount} 个预设</div>
           </div>
         `);
@@ -4793,7 +4947,7 @@ jQuery(async () => {
         <div class="cfm-tnode ${isSelected ? "cfm-tnode-selected" : ""}" data-id="${escapeHtml(folderId)}" style="padding-left:${indent}px;" draggable="true">
           <span class="cfm-tnode-arrow ${hasChildren ? (isExpanded ? "cfm-arrow-expanded" : "") : "cfm-arrow-hidden"}"><i class="fa-solid fa-caret-right"></i></span>
           <span class="cfm-tnode-icon"><i class="fa-solid fa-folder${isSelected ? "-open" : ""}"></i></span>
-          <span class="cfm-tnode-label">${escapeHtml(folderId)}</span>
+          <span class="cfm-tnode-label">${escapeHtml(getResFolderDisplayName("worldinfo", folderId))}</span>
           <span class="cfm-tnode-count">${count}</span>
         </div>
       `);
@@ -5036,9 +5190,9 @@ jQuery(async () => {
         "worldinfo",
         getResChildFolders("worldinfo", selectedWorldInfoFolder),
       );
-      const path = getResFolderPath("worldinfo", selectedWorldInfoFolder).join(
-        " › ",
-      );
+      const path = getResFolderPath("worldinfo", selectedWorldInfoFolder).map(
+        (id) => getResFolderDisplayName("worldinfo", id),
+      ).join(" › ");
       displayTitle = path;
     }
 
@@ -5068,7 +5222,7 @@ jQuery(async () => {
         const row = $(`
           <div class="cfm-row cfm-row-folder" data-folder-id="${escapeHtml(childId)}" draggable="true">
             <div class="cfm-row-icon"><i class="fa-solid fa-folder"></i></div>
-            <div class="cfm-row-name">${escapeHtml(childId)}</div>
+            <div class="cfm-row-name">${escapeHtml(getResFolderDisplayName("worldinfo", childId))}</div>
             <div class="cfm-row-meta">${childCount} 个世界书</div>
           </div>
         `);
