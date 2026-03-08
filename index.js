@@ -1735,6 +1735,7 @@ jQuery(async () => {
                     <div class="cfm-header-actions">
                         <button id="cfm-btn-copymode" class="cfm-copymode-btn ${cfmCopyMode ? "cfm-copymode-active" : ""}" title="${cfmCopyMode ? "当前：复制模式（拖拽角色会保留原位置）" : "当前：移动模式（拖拽角色会从原位置移除）"}"><i class="fa-solid fa-${cfmCopyMode ? "copy" : "arrows-turn-to-dots"}"></i> ${cfmCopyMode ? "复制" : "移动"}</button>
                         <button id="cfm-btn-config" title="标签管理"><i class="fa-solid fa-gear"></i></button>
+                        <button id="cfm-btn-backup" title="导入/导出"><i class="fa-solid fa-arrow-right-arrow-left"></i></button>
                         <button class="cfm-btn-close" id="cfm-btn-close-main">&times;</button>
                     </div>
                 </div>
@@ -1905,6 +1906,10 @@ jQuery(async () => {
     popup.find("#cfm-btn-config").on("click touchend", (e) => {
       e.preventDefault();
       showConfigPopup();
+    });
+    popup.find("#cfm-btn-backup").on("click touchend", (e) => {
+      e.preventDefault();
+      showImportExportPopup();
     });
     // 展开全部 / 收起全部
     popup.find("#cfm-expand-all").on("click touchend", (e) => {
@@ -5680,6 +5685,392 @@ jQuery(async () => {
         }
       });
     }
+  }
+
+  // ==================== 导入导出功能 ====================
+  function buildExportData(scope) {
+    const data = {
+      version: 1,
+      pluginName: extensionName,
+      exportDate: new Date().toISOString(),
+      scope: scope,
+    };
+
+    if (scope === "all" || scope === "chars") {
+      const charFolders = [];
+      const folderPathMap = {};
+
+      function buildFolderPathForExport(tagId) {
+        if (folderPathMap[tagId]) return folderPathMap[tagId];
+        const folder = config.folders[tagId];
+        if (!folder) return null;
+        const displayName = getTagName(tagId);
+        if (folder.parentId && config.folders[folder.parentId]) {
+          const parentPath = buildFolderPathForExport(folder.parentId);
+          folderPathMap[tagId] = parentPath
+            ? [...parentPath, displayName]
+            : [displayName];
+        } else {
+          folderPathMap[tagId] = [displayName];
+        }
+        return folderPathMap[tagId];
+      }
+
+      for (const tagId of getFolderTagIds()) {
+        buildFolderPathForExport(tagId);
+        charFolders.push({
+          path: folderPathMap[tagId],
+          sortOrder: config.folders[tagId]?.sortOrder ?? 0,
+        });
+      }
+
+      const assignments = {};
+      const characters = getCharacters();
+      const tagMap = getTagMap();
+      const allFolderIdSet = new Set(getFolderTagIds());
+
+      for (const char of characters) {
+        const charTags = tagMap[char.avatar] || [];
+        const folderTags = charTags.filter((t) => allFolderIdSet.has(t));
+        if (folderTags.length > 0) {
+          let deepest = folderTags[0];
+          let maxDepth = (folderPathMap[deepest] || []).length;
+          for (let i = 1; i < folderTags.length; i++) {
+            const d = (folderPathMap[folderTags[i]] || []).length;
+            if (d > maxDepth) {
+              deepest = folderTags[i];
+              maxDepth = d;
+            }
+          }
+          if (folderPathMap[deepest]) {
+            assignments[char.avatar] = folderPathMap[deepest];
+          }
+        }
+      }
+
+      data.chars = {
+        folderTree: charFolders,
+        favorites: [...getFavorites()],
+        assignments: assignments,
+      };
+    }
+
+    if (scope === "all" || scope === "presets") {
+      ensureResourceSettings();
+      data.presets = {
+        folderTree: JSON.parse(
+          JSON.stringify(getResFolderTree("presets")),
+        ),
+        groups: JSON.parse(
+          JSON.stringify(getResourceGroups("presets")),
+        ),
+        favorites: [...getResFavorites("presets")],
+      };
+    }
+
+    if (scope === "all" || scope === "worldinfo") {
+      ensureResourceSettings();
+      data.worldinfo = {
+        folderTree: JSON.parse(
+          JSON.stringify(getResFolderTree("worldinfo")),
+        ),
+        groups: JSON.parse(
+          JSON.stringify(getResourceGroups("worldinfo")),
+        ),
+        favorites: [...getResFavorites("worldinfo")],
+      };
+    }
+
+    return data;
+  }
+
+  function executeExport(scope) {
+    const data = buildExportData(scope);
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const scopeLabel =
+      scope === "all"
+        ? "全部"
+        : scope === "chars"
+          ? "角色卡"
+          : scope === "presets"
+            ? "预设"
+            : "世界书";
+    a.download = `cfm-backup-${scopeLabel}-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toastr.success(`已导出${scopeLabel}数据`);
+  }
+
+  async function executeImport(jsonData) {
+    const report = {
+      chars: { matched: 0, skipped: 0 },
+      presets: { matched: 0, skipped: 0 },
+      worldinfo: { matched: 0, skipped: 0 },
+      foldersCreated: 0,
+      favoritesRestored: 0,
+    };
+
+    if (jsonData.chars) {
+      const { folderTree, favorites, assignments } = jsonData.chars;
+      const pathToTagId = {};
+
+      if (folderTree) {
+        const sortedFolders = [...folderTree].sort(
+          (a, b) => a.path.length - b.path.length,
+        );
+
+        for (const folderDef of sortedFolders) {
+          const path = folderDef.path;
+          const pathKey = path.join("/");
+          const displayName = path[path.length - 1];
+
+          let parentTagId = null;
+          if (path.length > 1) {
+            const parentPathKey = path.slice(0, -1).join("/");
+            parentTagId = pathToTagId[parentPathKey] || null;
+          }
+
+          let existingTagId = null;
+          for (const tagId of getFolderTagIds()) {
+            const existingPath = getFolderPath(tagId).map((id) => getTagName(id));
+            if (existingPath.join("/") === pathKey) {
+              existingTagId = tagId;
+              break;
+            }
+          }
+
+          if (existingTagId) {
+            pathToTagId[pathKey] = existingTagId;
+            if (folderDef.sortOrder !== undefined) {
+              config.folders[existingTagId].sortOrder = folderDef.sortOrder;
+            }
+          } else {
+            const { tag, displayName: dn } = findOrCreateTag(displayName, parentTagId);
+            config.folders[tag.id] = {
+              parentId: parentTagId,
+              sortOrder: folderDef.sortOrder ?? 0,
+            };
+            if (dn) config.folders[tag.id].displayName = dn;
+            pathToTagId[pathKey] = tag.id;
+            report.foldersCreated++;
+          }
+        }
+        saveConfig(config);
+      }
+
+      if (assignments) {
+        const characters = getCharacters();
+        const avatarSet = new Set(characters.map((c) => c.avatar));
+
+        for (const [avatar, folderPath] of Object.entries(assignments)) {
+          if (avatarSet.has(avatar)) {
+            const pathKey = folderPath.join("/");
+            const targetTagId = pathToTagId[pathKey];
+            if (targetTagId) {
+              moveCharToFolder(avatar, targetTagId);
+              report.chars.matched++;
+            } else {
+              report.chars.skipped++;
+            }
+          } else {
+            report.chars.skipped++;
+          }
+        }
+      }
+
+      if (favorites) {
+        const characters = getCharacters();
+        const avatarSet = new Set(characters.map((c) => c.avatar));
+        for (const avatar of favorites) {
+          if (avatarSet.has(avatar) && !isFavorite(avatar)) {
+            toggleFavorite(avatar);
+            report.favoritesRestored++;
+          }
+        }
+      }
+    }
+
+    if (jsonData.presets) {
+      const { folderTree, groups, favorites } = jsonData.presets;
+      ensureResourceSettings();
+
+      if (folderTree) {
+        const existingTree = getResFolderTree("presets");
+        for (const [folderId, folderData] of Object.entries(folderTree)) {
+          if (!existingTree[folderId]) {
+            existingTree[folderId] = { ...folderData };
+            report.foldersCreated++;
+          }
+        }
+        saveResTree("presets");
+      }
+
+      if (groups) {
+        const currentPresetsList = getCurrentPresets();
+        const presetNames = new Set(currentPresetsList.map((p) => p.name));
+        const existingFolderIds = new Set(getResFolderIds("presets"));
+
+        for (const [presetName, folderName] of Object.entries(groups)) {
+          if (presetNames.has(presetName) && existingFolderIds.has(folderName)) {
+            setItemGroup("presets", presetName, folderName);
+            report.presets.matched++;
+          } else {
+            report.presets.skipped++;
+          }
+        }
+      }
+
+      if (favorites) {
+        const currentPresetsList = getCurrentPresets();
+        const presetNames = new Set(currentPresetsList.map((p) => p.name));
+        for (const name of favorites) {
+          if (presetNames.has(name) && !isResFavorite("presets", name)) {
+            toggleResFavorite("presets", name);
+            report.favoritesRestored++;
+          }
+        }
+      }
+    }
+
+    if (jsonData.worldinfo) {
+      const { folderTree, groups, favorites } = jsonData.worldinfo;
+      ensureResourceSettings();
+
+      if (folderTree) {
+        const existingTree = getResFolderTree("worldinfo");
+        for (const [folderId, folderData] of Object.entries(folderTree)) {
+          if (!existingTree[folderId]) {
+            existingTree[folderId] = { ...folderData };
+            report.foldersCreated++;
+          }
+        }
+        saveResTree("worldinfo");
+      }
+
+      if (groups) {
+        const wiNames = await getWorldInfoNames(true);
+        const wiNameSet = new Set(wiNames);
+        const existingFolderIds = new Set(getResFolderIds("worldinfo"));
+
+        for (const [wiName, folderName] of Object.entries(groups)) {
+          if (wiNameSet.has(wiName) && existingFolderIds.has(folderName)) {
+            setItemGroup("worldinfo", wiName, folderName);
+            report.worldinfo.matched++;
+          } else {
+            report.worldinfo.skipped++;
+          }
+        }
+      }
+
+      if (favorites) {
+        const wiNames = await getWorldInfoNames();
+        const wiNameSet = new Set(wiNames);
+        for (const name of favorites) {
+          if (wiNameSet.has(name) && !isResFavorite("worldinfo", name)) {
+            toggleResFavorite("worldinfo", name);
+            report.favoritesRestored++;
+          }
+        }
+      }
+    }
+
+    return report;
+  }
+
+  function showImportExportPopup() {
+    if ($("#cfm-backup-overlay").length > 0) return;
+    const overlay = $('<div id="cfm-backup-overlay" class="cfm-batch-overlay"></div>');
+    const currentTab = currentResourceType === "chars" ? "角色卡" : currentResourceType === "presets" ? "预设" : "世界书";
+    const popup = $(`
+      <div class="cfm-batch-popup" style="max-width:480px;">
+        <div class="cfm-config-header">
+          <h3>📦 导入 / 导出</h3>
+          <button class="cfm-btn-close" id="cfm-backup-close">&times;</button>
+        </div>
+        <div style="padding:16px;">
+          <div class="cfm-config-section">
+            <label>导出数据</label>
+            <div class="cfm-create-tag-hint" style="margin-bottom:10px;">导出文件夹结构和文件分配关系（不含实际文件内容），用于跨设备迁移。</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="cfm-btn cfm-backup-export-btn" data-scope="all" style="background:rgba(88,101,242,0.2);color:#8b9dfc;border-color:rgba(88,101,242,0.4);"><i class="fa-solid fa-download"></i> 导出全部</button>
+              <button class="cfm-btn cfm-backup-export-btn" data-scope="${currentResourceType}" style="background:rgba(87,242,135,0.15);color:#57f287;border-color:rgba(87,242,135,0.4);"><i class="fa-solid fa-download"></i> 仅导出${currentTab}</button>
+            </div>
+          </div>
+          <div class="cfm-config-section" style="margin-top:16px;">
+            <label>导入数据</label>
+            <div class="cfm-create-tag-hint" style="margin-bottom:10px;">从备份文件恢复。插件会按名称匹配当前设备上已有的文件，匹配到的放入对应文件夹，匹配不到的跳过。</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <button class="cfm-btn" id="cfm-backup-import-btn" style="background:rgba(249,226,175,0.15);color:#f9e2af;border-color:rgba(249,226,175,0.4);"><i class="fa-solid fa-upload"></i> 选择文件导入</button>
+              <input type="file" id="cfm-backup-file-input" accept=".json" style="display:none;" />
+            </div>
+            <div id="cfm-backup-import-result" style="margin-top:10px;"></div>
+          </div>
+        </div>
+      </div>
+    `);
+    overlay.append(popup);
+    $("body").append(overlay);
+
+    popup.find("#cfm-backup-close").on("click touchend", (e) => {
+      e.preventDefault();
+      overlay.remove();
+    });
+
+    popup.find(".cfm-backup-export-btn").on("click touchend", function (e) {
+      e.preventDefault();
+      const scope = $(this).data("scope");
+      executeExport(scope);
+    });
+
+    popup.find("#cfm-backup-import-btn").on("click touchend", (e) => {
+      e.preventDefault();
+      popup.find("#cfm-backup-file-input").trigger("click");
+    });
+
+    popup.find("#cfm-backup-file-input").on("change", function () {
+      const file = this.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        try {
+          const jsonData = JSON.parse(ev.target.result);
+          if (!jsonData.version || !jsonData.pluginName) {
+            toastr.error("无效的备份文件");
+            return;
+          }
+          const resultArea = popup.find("#cfm-backup-import-result");
+          resultArea.html('<div style="color:#8b9dfc;"><i class="fa-solid fa-spinner fa-spin"></i> 正在导入...</div>');
+
+          const report = await executeImport(jsonData);
+          config = loadConfig();
+
+          let html = '<div style="color:#57f287;margin-bottom:6px;">✅ 导入完成</div>';
+          html += `<div style="font-size:12px;line-height:1.8;color:#a6adc8;">`;
+          html += `创建了 ${report.foldersCreated} 个新文件夹<br>`;
+          if (jsonData.chars) html += `角色卡：匹配 ${report.chars.matched} 个，跳过 ${report.chars.skipped} 个<br>`;
+          if (jsonData.presets) html += `预设：匹配 ${report.presets.matched} 个，跳过 ${report.presets.skipped} 个<br>`;
+          if (jsonData.worldinfo) html += `世界书：匹配 ${report.worldinfo.matched} 个，跳过 ${report.worldinfo.skipped} 个<br>`;
+          if (report.favoritesRestored > 0) html += `恢复了 ${report.favoritesRestored} 个收藏<br>`;
+          html += `</div>`;
+          resultArea.html(html);
+
+          renderLeftTree();
+          renderRightPane();
+          if (currentResourceType === "presets") renderPresetsView();
+          else if (currentResourceType === "worldinfo") renderWorldInfoView();
+        } catch (err) {
+          toastr.error("导入失败：" + err.message);
+          console.error("[CFM] Import error:", err);
+        }
+      };
+      reader.readAsText(file);
+    });
   }
 
   // ==================== 初始化 ====================
