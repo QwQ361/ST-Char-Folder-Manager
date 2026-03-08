@@ -219,8 +219,10 @@ jQuery(async () => {
     }
   }
 
-  // 获取世界书列表
-  async function getWorldInfoNames() {
+  // 获取世界书列表（带缓存）
+  let _worldInfoNamesCache = null;
+  async function getWorldInfoNames(forceRefresh) {
+    if (_worldInfoNamesCache && !forceRefresh) return _worldInfoNamesCache;
     try {
       const resp = await fetch("/api/settings/get", {
         method: "POST",
@@ -229,7 +231,8 @@ jQuery(async () => {
       });
       if (resp.ok) {
         const data = await resp.json();
-        return data.world_names || [];
+        _worldInfoNamesCache = data.world_names || [];
+        return _worldInfoNamesCache;
       }
     } catch (e) {}
     // fallback: 从DOM读取
@@ -239,6 +242,7 @@ jQuery(async () => {
       const t = $(this).text();
       if (v !== "" && t !== "--- 选择以编辑 ---") names.push(t);
     });
+    _worldInfoNamesCache = names;
     return names;
   }
   function openWorldInfoEditor(name) {
@@ -2248,6 +2252,9 @@ jQuery(async () => {
     rightCharSortMode = null;
 
     renderLeftTree();
+
+    // 预加载世界书名称缓存（后台静默加载，切换标签时无需等待）
+    getWorldInfoNames();
 
     // 全局搜索框事件绑定
     popup.find("#cfm-global-search").on("input", function () {
@@ -5182,12 +5189,20 @@ jQuery(async () => {
     const rightList = $("#cfm-worldinfo-right-list");
     const pathEl = $("#cfm-worldinfo-rh-path");
     const countEl = $("#cfm-worldinfo-rh-count");
-    leftTree.empty();
-    rightList.html(
-      '<div class="cfm-right-empty"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>',
-    );
 
-    const names = await getWorldInfoNames();
+    // 缓存可用时同步获取，避免 await 微任务边界导致的闪烁
+    let names;
+    if (_worldInfoNamesCache) {
+      names = _worldInfoNamesCache;
+    } else {
+      leftTree.empty();
+      rightList.html(
+        '<div class="cfm-right-empty"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>',
+      );
+      names = await getWorldInfoNames();
+    }
+
+    leftTree.empty();
     const tree = getResFolderTree("worldinfo");
     const allFolderIds = getResFolderIds("worldinfo");
     const groups = getResourceGroups("worldinfo");
