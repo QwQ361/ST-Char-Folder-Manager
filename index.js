@@ -3971,6 +3971,22 @@ jQuery(async () => {
             : "";
         })()
       : "";
+    // 创作者和版本信息
+    const charCreator = char.data?.creator || "";
+    const charVersion = char.data?.character_version || "";
+    let charMetaHtml = "";
+    if (charCreator || charVersion) {
+      const parts = [];
+      if (charVersion)
+        parts.push(
+          `<span class="cfm-char-version" title="版本: ${escapeHtml(charVersion)}">${escapeHtml(charVersion)}</span>`,
+        );
+      if (charCreator)
+        parts.push(
+          `<span class="cfm-char-creator" title="创作者: ${escapeHtml(charCreator)}">${escapeHtml(charCreator)}</span>`,
+        );
+      charMetaHtml = `<span class="cfm-char-meta-info">${parts.join('<span class="cfm-char-meta-sep"> · </span>')}</span>`;
+    }
     const checkboxHtml = cfmMultiSelectMode
       ? `<div class="cfm-multisel-checkbox ${isSelected ? "cfm-multisel-checked" : ""}"><i class="fa-${isSelected ? "solid" : "regular"} fa-square${isSelected ? "-check" : ""}"></i></div>`
       : "";
@@ -3978,7 +3994,7 @@ jQuery(async () => {
             <div class="cfm-row cfm-row-char ${isSelected ? "cfm-multisel-row-selected" : ""}" data-avatar="${escapeHtml(char.avatar)}" data-res-id="${escapeHtml(char.avatar)}" draggable="true">
                 ${checkboxHtml}
                 <div class="cfm-row-icon"><img src="${thumbUrl}" alt="" loading="lazy" onerror="this.src='/img/ai4.png'"></div>
-                <div class="cfm-row-name">${escapeHtml(char.name)}${folderPathHtml}</div>
+                <div class="cfm-row-name"><span class="cfm-char-name-text">${escapeHtml(char.name)}</span>${charMetaHtml}${folderPathHtml}</div>
                 <div class="cfm-row-star ${fav ? "cfm-star-active" : ""}" title="${fav ? "取消收藏" : "添加收藏"}"><i class="fa-${fav ? "solid" : "regular"} fa-star"></i></div>
             </div>
         `);
