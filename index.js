@@ -219,10 +219,23 @@ jQuery(async () => {
     }
   }
 
-  // 获取世界书列表（带缓存）
+  // 获取世界书列表（带缓存，优先从DOM读取避免网络延迟）
   let _worldInfoNamesCache = null;
+  let _worldInfoPreloadPromise = null;
   async function getWorldInfoNames(forceRefresh) {
     if (_worldInfoNamesCache && !forceRefresh) return _worldInfoNamesCache;
+    // 优先从DOM读取（同步，无延迟）
+    const names = [];
+    $("#world_editor_select option").each(function () {
+      const v = $(this).val();
+      const t = $(this).text();
+      if (v !== "" && t !== "--- 选择以编辑 ---") names.push(t);
+    });
+    if (names.length > 0) {
+      _worldInfoNamesCache = names;
+      return names;
+    }
+    // DOM为空时回退到API请求
     try {
       const resp = await fetch("/api/settings/get", {
         method: "POST",
@@ -235,15 +248,8 @@ jQuery(async () => {
         return _worldInfoNamesCache;
       }
     } catch (e) {}
-    // fallback: 从DOM读取
-    const names = [];
-    $("#world_editor_select option").each(function () {
-      const v = $(this).val();
-      const t = $(this).text();
-      if (v !== "" && t !== "--- 选择以编辑 ---") names.push(t);
-    });
-    _worldInfoNamesCache = names;
-    return names;
+    _worldInfoNamesCache = [];
+    return [];
   }
   function openWorldInfoEditor(name) {
     // 找到对应的option index
@@ -1961,12 +1967,19 @@ jQuery(async () => {
     // 每次打开主弹窗时检测新标签
     detectAndImportNewTags();
     config = loadConfig(); // 刷新配置
+    // 重置资源类型为角色卡，确保与HTML模板中默认active标签一致
+    currentResourceType = "chars";
     selectedTreeNode = null;
     expandedNodes.clear();
     selectedPresetFolder = null;
     selectedWorldInfoFolder = null;
     presetExpandedNodes.clear();
     worldInfoExpandedNodes.clear();
+
+    // 清除世界书缓存，确保每次打开弹窗都获取最新数据（与酒馆原生界面同步）
+    _worldInfoNamesCache = null;
+    // 预加载世界书数据，保存 Promise 以便切换标签时直接复用
+    _worldInfoPreloadPromise = getWorldInfoNames();
 
     const overlay = $('<div id="cfm-overlay"></div>');
     const popup = $(`
@@ -5519,7 +5532,41 @@ jQuery(async () => {
     const tree = getResFolderTree("presets");
     const allFolderIds = getResFolderIds("presets");
     const presets = getCurrentPresets();
+
+    // 预设管理器尚未就绪时显示提示并自动重试
+    if (presets.length === 0) {
+      const pm = getContext().getPresetManager();
+      if (!pm || !pm.select) {
+        rightList.html(
+          '<div class="cfm-right-empty"><i class="fa-solid fa-spinner fa-spin"></i> 预设管理器加载中，请稍后再试...</div>',
+        );
+        if (!renderPresetsView._retryCount) renderPresetsView._retryCount = 0;
+        if (renderPresetsView._retryCount < 20) {
+          renderPresetsView._retryCount++;
+          setTimeout(() => {
+            if (currentResourceType === "presets") renderPresetsView();
+          }, 500);
+        }
+        return;
+      }
+    }
+    renderPresetsView._retryCount = 0;
+
     const groups = getResourceGroups("presets");
+
+    // 清理 groups 中已不存在的预设映射（同步外部删除）
+    const existingPresetNames = new Set(presets.map((p) => p.name));
+    let presetGroupsCleaned = false;
+    for (const key of Object.keys(groups)) {
+      if (!existingPresetNames.has(key)) {
+        delete groups[key];
+        presetGroupsCleaned = true;
+      }
+    }
+    if (presetGroupsCleaned) {
+      console.log("[CFM] 已清理不存在的预设分组映射");
+      getContext().saveSettingsDebounced();
+    }
 
     // 分类：直接属于某文件夹的预设
     const folderItems = {};
@@ -6142,10 +6189,25 @@ jQuery(async () => {
     const pathEl = $("#cfm-worldinfo-rh-path");
     const countEl = $("#cfm-worldinfo-rh-count");
 
-    // 缓存可用时同步获取，避免 await 微任务边界导致的闪烁
+    // 每次渲染时清除缓存以确保与酒馆原生界面保持同步
+    _worldInfoNamesCache = null;
     let names;
-    if (_worldInfoNamesCache) {
-      names = _worldInfoNamesCache;
+    // 优先从DOM同步读取（getWorldInfoNames内部会先尝试DOM）
+    const domNames = [];
+    $("#world_editor_select option").each(function () {
+      const v = $(this).val();
+      const t = $(this).text();
+      if (v !== "" && t !== "--- 选择以编辑 ---") domNames.push(t);
+    });
+    if (domNames.length > 0) {
+      names = domNames;
+      _worldInfoNamesCache = domNames;
+    } else if (_worldInfoPreloadPromise) {
+      leftTree.empty();
+      rightList.html(
+        '<div class="cfm-right-empty"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>',
+      );
+      names = await _worldInfoPreloadPromise;
     } else {
       leftTree.empty();
       rightList.html(
@@ -6158,6 +6220,20 @@ jQuery(async () => {
     const tree = getResFolderTree("worldinfo");
     const allFolderIds = getResFolderIds("worldinfo");
     const groups = getResourceGroups("worldinfo");
+
+    // 清理 groups 中已不存在的世界书映射（同步外部删除）
+    const existingWiNames = new Set(names);
+    let wiGroupsCleaned = false;
+    for (const key of Object.keys(groups)) {
+      if (!existingWiNames.has(key)) {
+        delete groups[key];
+        wiGroupsCleaned = true;
+      }
+    }
+    if (wiGroupsCleaned) {
+      console.log("[CFM] 已清理不存在的世界书分组映射");
+      getContext().saveSettingsDebounced();
+    }
 
     // 分类
     const folderItems = {};

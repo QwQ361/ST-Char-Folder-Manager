@@ -1163,12 +1163,22 @@
   #cfm-popup {
     width: 100vw;
     height: 100vh;
+    height: 100dvh; /* 动态视口高度，排除浏览器导航栏 */
     max-width: 100vw;
+    max-height: 100vh;
+    max-height: 100dvh;
     border-radius: 0;
     padding-top: 0;
   }
   #cfm-overlay {
     padding-top: 0;
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  /* 为底部可滚动列表添加安全边距，防止被浏览器导航栏遮挡 */
+  .cfm-right-list {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 48px);
   }
 
   /* 双栏改为上下布局 */
