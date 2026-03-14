@@ -4081,7 +4081,7 @@ jQuery(async () => {
     const headers = getContext().getRequestHeaders();
     let allThemes = [];
     try {
-      const resp = await fetch("/api/themes/all", {
+      const resp = await fetch("/api/settings/get", {
         method: "POST",
         headers,
         body: JSON.stringify({}),
