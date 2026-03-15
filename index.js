@@ -10414,13 +10414,13 @@ jQuery(async () => {
     let charMetaHtml = "";
     if (charCreator || charVersion) {
       const parts = [];
-      if (charVersion)
-        parts.push(
-          `<span class="cfm-char-version" title="版本: ${escapeHtml(charVersion)}">${escapeHtml(charVersion)}</span>`,
-        );
       if (charCreator)
         parts.push(
           `<span class="cfm-char-creator" title="创作者: ${escapeHtml(charCreator)}">${escapeHtml(charCreator)}</span>`,
+        );
+      if (charVersion)
+        parts.push(
+          `<span class="cfm-char-version" title="版本: ${escapeHtml(charVersion)}">${escapeHtml(charVersion)}</span>`,
         );
       charMetaHtml = `<span class="cfm-char-meta-info">${parts.join('<span class="cfm-char-meta-sep"> · </span>')}</span>`;
     }
