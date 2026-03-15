@@ -193,6 +193,36 @@ jQuery(async () => {
     saveResTree(type);
   }
 
+  // 重命名文件夹（通用弹窗）
+  function promptRenameFolder(resType, folderId, renderFn) {
+    // 获取当前显示名
+    let currentName;
+    if (resType === "chars") {
+      currentName = getTagName(folderId);
+    } else {
+      currentName = getResFolderDisplayName(resType, folderId);
+    }
+    const newName = prompt("重命名文件夹", currentName);
+    if (!newName || !newName.trim() || newName.trim() === currentName) return;
+    const trimmed = newName.trim();
+    if (resType === "chars") {
+      // 角色卡文件夹使用 tag 系统
+      config.folders[folderId].displayName = trimmed;
+      rebuildTagName(folderId);
+      recursiveRebuildTagNames(folderId);
+      saveSettings();
+    } else {
+      // 资源类型文件夹
+      const tree = getResFolderTree(resType);
+      if (tree[folderId]) {
+        tree[folderId].displayName = trimmed;
+        saveResTree(resType);
+      }
+    }
+    if (typeof renderFn === "function") renderFn();
+    toastr.success(`文件夹已重命名为「${trimmed}」`);
+  }
+
   // 兼容旧接口
   function getResourceFolders(type) {
     ensureResourceSettings();
@@ -3338,7 +3368,10 @@ jQuery(async () => {
               // 触发 CHARACTER_DELETED 事件，让其他插件（如自动删除绑定世界书）能够响应
               if (evtSource && evtTypes && character) {
                 try {
-                  await evtSource.emit(evtTypes.CHARACTER_DELETED, { id: chid, character: character });
+                  await evtSource.emit(evtTypes.CHARACTER_DELETED, {
+                    id: chid,
+                    character: character,
+                  });
                 } catch (evtErr) {
                   console.warn(`[CFM] 触发 CHARACTER_DELETED 事件失败`, evtErr);
                 }
@@ -7673,16 +7706,16 @@ jQuery(async () => {
             const globalSelect = $("#world_info");
             for (const fn of freshNames) {
               // 同步到 #world_editor_select
-              if (!editorSelect.find(`option[value="${CSS.escape(fn)}"]`).length) {
-                editorSelect.append(
-                  $('<option>').val(fn).text(fn)
-                );
+              if (
+                !editorSelect.find(`option[value="${CSS.escape(fn)}"]`).length
+              ) {
+                editorSelect.append($("<option>").val(fn).text(fn));
               }
               // 同步到 #world_info
-              if (!globalSelect.find(`option[value="${CSS.escape(fn)}"]`).length) {
-                globalSelect.append(
-                  $('<option>').val(fn).text(fn)
-                );
+              if (
+                !globalSelect.find(`option[value="${CSS.escape(fn)}"]`).length
+              ) {
+                globalSelect.append($("<option>").val(fn).text(fn));
               }
               // 同步到 world_names 数组
               if (Array.isArray(wNames) && !wNames.includes(fn)) {
@@ -9821,9 +9854,19 @@ jQuery(async () => {
                 <span class="cfm-tnode-arrow ${hasChildren ? (isExpanded ? "cfm-arrow-expanded" : "") : "cfm-arrow-hidden"}"><i class="fa-solid fa-caret-right"></i></span>
                 <span class="cfm-tnode-icon"><i class="fa-solid fa-folder${isSelected ? "-open" : ""}"></i></span>
                 <span class="cfm-tnode-label">${escapeHtml(getTagName(folderId))}${isNew ? ' <span class="cfm-new-badge">新</span>' : ""}</span>
+                <span class="cfm-tnode-rename" title="重命名文件夹"><i class="fa-solid fa-pen"></i></span>
                 <span class="cfm-tnode-count">${count}</span>
             </div>
         `);
+
+    // 点击重命名按钮
+    node.find(".cfm-tnode-rename").on("click", (e) => {
+      e.stopPropagation();
+      promptRenameFolder("chars", folderId, () => {
+        renderLeftTree();
+        renderRightPane();
+      });
+    });
 
     // 点击箭头：展开/收起
     node.find(".cfm-tnode-arrow").on("click", (e) => {
@@ -10171,9 +10214,18 @@ jQuery(async () => {
                 <div class="cfm-row cfm-row-folder" data-folder-id="${childId}" draggable="true">
                     <div class="cfm-row-icon"><i class="fa-solid fa-folder"></i></div>
                     <div class="cfm-row-name">${escapeHtml(getTagName(childId))}</div>
+                    <div class="cfm-row-rename-btn" title="重命名文件夹"><i class="fa-solid fa-pen"></i></div>
                     <div class="cfm-row-meta">${childCount} 个角色</div>
                 </div>
             `);
+      // 点击重命名按钮
+      row.find(".cfm-row-rename-btn").on("click", (e) => {
+        e.stopPropagation();
+        promptRenameFolder("chars", childId, () => {
+          renderLeftTree();
+          renderRightPane();
+        });
+      });
       // 点击子文件夹：左侧树展开并选中
       row.on("click", (e) => {
         e.preventDefault();
@@ -12268,9 +12320,15 @@ jQuery(async () => {
           <span class="cfm-tnode-arrow ${hasChildren ? (isExpanded ? "cfm-arrow-expanded" : "") : "cfm-arrow-hidden"}"><i class="fa-solid fa-caret-right"></i></span>
           <span class="cfm-tnode-icon"><i class="fa-solid fa-folder${isSelected ? "-open" : ""}"></i></span>
           <span class="cfm-tnode-label">${escapeHtml(getResFolderDisplayName("presets", folderId))}</span>
+          <span class="cfm-tnode-rename" title="重命名文件夹"><i class="fa-solid fa-pen"></i></span>
           <span class="cfm-tnode-count">${count}</span>
         </div>
       `);
+
+      node.find(".cfm-tnode-rename").on("click", (e) => {
+        e.stopPropagation();
+        promptRenameFolder("presets", folderId, () => renderPresetsView());
+      });
 
       // 点击箭头展开/收起
       node.find(".cfm-tnode-arrow").on("click", (e) => {
@@ -12553,9 +12611,14 @@ jQuery(async () => {
           <div class="cfm-row cfm-row-folder" data-folder-id="${escapeHtml(childId)}" draggable="true">
             <div class="cfm-row-icon"><i class="fa-solid fa-folder"></i></div>
             <div class="cfm-row-name">${escapeHtml(getResFolderDisplayName("presets", childId))}</div>
+            <div class="cfm-row-rename-btn" title="重命名文件夹"><i class="fa-solid fa-pen"></i></div>
             <div class="cfm-row-meta">${childCount} 个预设</div>
           </div>
         `);
+        row.find(".cfm-row-rename-btn").on("click", (e) => {
+          e.stopPropagation();
+          promptRenameFolder("presets", childId, () => renderPresetsView());
+        });
         row.on("click", (e) => {
           e.preventDefault();
           const path = getResFolderPath("presets", childId);
@@ -12996,9 +13059,14 @@ jQuery(async () => {
           <span class="cfm-tnode-arrow ${hasChildren ? (isExpanded ? "cfm-arrow-expanded" : "") : "cfm-arrow-hidden"}"><i class="fa-solid fa-caret-right"></i></span>
           <span class="cfm-tnode-icon"><i class="fa-solid fa-folder${isSelected ? "-open" : ""}"></i></span>
           <span class="cfm-tnode-label">${escapeHtml(getResFolderDisplayName("themes", folderId))}</span>
+          <span class="cfm-tnode-rename" title="重命名文件夹"><i class="fa-solid fa-pen"></i></span>
           <span class="cfm-tnode-count">${count}</span>
         </div>
       `);
+      node.find(".cfm-tnode-rename").on("click", (e) => {
+        e.stopPropagation();
+        promptRenameFolder("themes", folderId, () => renderThemesView());
+      });
       node.find(".cfm-tnode-arrow").on("click", (e) => {
         e.stopPropagation();
         if (!hasChildren) return;
@@ -13250,9 +13318,14 @@ jQuery(async () => {
           <div class="cfm-row cfm-row-folder" data-folder-id="${escapeHtml(childId)}" draggable="true">
             <div class="cfm-row-icon"><i class="fa-solid fa-folder"></i></div>
             <div class="cfm-row-name">${escapeHtml(getResFolderDisplayName("themes", childId))}</div>
+            <div class="cfm-row-rename-btn" title="重命名文件夹"><i class="fa-solid fa-pen"></i></div>
             <div class="cfm-row-meta">${childCount} 个主题</div>
           </div>
         `);
+        row.find(".cfm-row-rename-btn").on("click", (e) => {
+          e.stopPropagation();
+          promptRenameFolder("themes", childId, () => renderThemesView());
+        });
         row.on("click", (e) => {
           e.preventDefault();
           const path = getResFolderPath("themes", childId);
@@ -13670,8 +13743,12 @@ jQuery(async () => {
       const count = countResItemsRecursive("backgrounds", folderId);
       const indent = 10 + depth * 16;
       const node = $(
-        `<div class="cfm-tnode ${isSelected ? "cfm-tnode-selected" : ""}" data-id="${escapeHtml(folderId)}" style="padding-left:${indent}px;" draggable="true"><span class="cfm-tnode-arrow ${hasChildren ? (isExpanded ? "cfm-arrow-expanded" : "") : "cfm-arrow-hidden"}"><i class="fa-solid fa-caret-right"></i></span><span class="cfm-tnode-icon"><i class="fa-solid fa-folder${isSelected ? "-open" : ""}"></i></span><span class="cfm-tnode-label">${escapeHtml(getResFolderDisplayName("backgrounds", folderId))}</span><span class="cfm-tnode-count">${count}</span></div>`,
+        `<div class="cfm-tnode ${isSelected ? "cfm-tnode-selected" : ""}" data-id="${escapeHtml(folderId)}" style="padding-left:${indent}px;" draggable="true"><span class="cfm-tnode-arrow ${hasChildren ? (isExpanded ? "cfm-arrow-expanded" : "") : "cfm-arrow-hidden"}"><i class="fa-solid fa-caret-right"></i></span><span class="cfm-tnode-icon"><i class="fa-solid fa-folder${isSelected ? "-open" : ""}"></i></span><span class="cfm-tnode-label">${escapeHtml(getResFolderDisplayName("backgrounds", folderId))}</span><span class="cfm-tnode-rename" title="重命名文件夹"><i class="fa-solid fa-pen"></i></span><span class="cfm-tnode-count">${count}</span></div>`,
       );
+      node.find(".cfm-tnode-rename").on("click", (e) => {
+        e.stopPropagation();
+        promptRenameFolder("backgrounds", folderId, () => renderBackgroundsView());
+      });
       node.find(".cfm-tnode-arrow").on("click", (e) => {
         e.stopPropagation();
         if (!hasChildren) return;
@@ -13906,8 +13983,12 @@ jQuery(async () => {
       for (const childId of childFolders) {
         const childCount = countResItemsRecursive("backgrounds", childId);
         const row = $(
-          `<div class="cfm-row cfm-row-folder" data-folder-id="${escapeHtml(childId)}" draggable="true"><div class="cfm-row-icon"><i class="fa-solid fa-folder"></i></div><div class="cfm-row-name">${escapeHtml(getResFolderDisplayName("backgrounds", childId))}</div><div class="cfm-row-meta">${childCount} 个背景</div></div>`,
+          `<div class="cfm-row cfm-row-folder" data-folder-id="${escapeHtml(childId)}" draggable="true"><div class="cfm-row-icon"><i class="fa-solid fa-folder"></i></div><div class="cfm-row-name">${escapeHtml(getResFolderDisplayName("backgrounds", childId))}</div><div class="cfm-row-rename-btn" title="重命名文件夹"><i class="fa-solid fa-pen"></i></div><div class="cfm-row-meta">${childCount} 个背景</div></div>`,
         );
+        row.find(".cfm-row-rename-btn").on("click", (e) => {
+          e.stopPropagation();
+          promptRenameFolder("backgrounds", childId, () => renderBackgroundsView());
+        });
         row.on("click", (e) => {
           e.preventDefault();
           const path = getResFolderPath("backgrounds", childId);
@@ -14699,9 +14780,15 @@ jQuery(async () => {
           <span class="cfm-tnode-arrow ${hasChildren ? (isExpanded ? "cfm-arrow-expanded" : "") : "cfm-arrow-hidden"}"><i class="fa-solid fa-caret-right"></i></span>
           <span class="cfm-tnode-icon"><i class="fa-solid fa-folder${isSelected ? "-open" : ""}"></i></span>
           <span class="cfm-tnode-label">${escapeHtml(getResFolderDisplayName("worldinfo", folderId))}</span>
+          <span class="cfm-tnode-rename" title="重命名文件夹"><i class="fa-solid fa-pen"></i></span>
           <span class="cfm-tnode-count">${count}</span>
         </div>
       `);
+
+      node.find(".cfm-tnode-rename").on("click", (e) => {
+        e.stopPropagation();
+        promptRenameFolder("worldinfo", folderId, () => renderWorldInfoView());
+      });
 
       node.find(".cfm-tnode-arrow").on("click", (e) => {
         e.stopPropagation();
@@ -15001,9 +15088,14 @@ jQuery(async () => {
           <div class="cfm-row cfm-row-folder" data-folder-id="${escapeHtml(childId)}" draggable="true">
             <div class="cfm-row-icon"><i class="fa-solid fa-folder"></i></div>
             <div class="cfm-row-name">${escapeHtml(getResFolderDisplayName("worldinfo", childId))}</div>
+            <div class="cfm-row-rename-btn" title="重命名文件夹"><i class="fa-solid fa-pen"></i></div>
             <div class="cfm-row-meta">${childCount} 个世界书</div>
           </div>
         `);
+        row.find(".cfm-row-rename-btn").on("click", (e) => {
+          e.stopPropagation();
+          promptRenameFolder("worldinfo", childId, () => renderWorldInfoView());
+        });
         row.on("click", (e) => {
           e.preventDefault();
           const path = getResFolderPath("worldinfo", childId);
