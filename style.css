@@ -528,6 +528,21 @@
   margin-bottom: 6px;
   font-weight: 600;
 }
+.cfm-config-section input[type="checkbox"],
+.cfm-config-section input[type="radio"] {
+  appearance: auto !important;
+  -webkit-appearance: auto !important;
+  -moz-appearance: auto !important;
+  width: 16px !important;
+  height: 16px !important;
+  opacity: 1 !important;
+  position: static !important;
+  pointer-events: auto !important;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: #89b4fa;
+  cursor: pointer;
+}
 .cfm-config-tab-shell {
   display: flex;
   flex-direction: column;
@@ -2100,6 +2115,21 @@
     background: var(--SmartThemeBlurTintColor, #1e1e2e);
     border-top: 1px solid var(--SmartThemeBorderColor, #45475a);
   }
+
+  /* 自定义外观弹窗移动端适配：防止底部按钮被浏览器导航栏遮挡 */
+  .cfm-theme-popup-overlay {
+    align-items: flex-end;
+  }
+  .cfm-theme-popup {
+    max-height: calc(
+      100dvh - max(env(safe-area-inset-bottom, 0px), 56px) - 12px
+    );
+    margin-bottom: max(env(safe-area-inset-bottom, 0px), 56px);
+    border-radius: 10px 10px 0 0;
+  }
+  .cfm-theme-popup-footer {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
+  }
 }
 
 /* ========== 移动端下方内容区全屏模式 ========== */
@@ -2116,6 +2146,31 @@
   /* 隐藏分隔手柄伪元素 */
   .cfm-dual-pane.cfm-bottom-fullscreen .cfm-left-pane::after {
     display: none;
+  }
+}
+
+/* ========== 移动端全屏模式变体 ========== */
+@media (max-width: 768px) {
+  /* 模式1: to-search（默认）—— 隐藏文件夹面板，保留标题栏+标签页+搜索栏 */
+  /* 这是现有的默认行为，无需额外隐藏 */
+
+  /* 模式2: to-tabs —— 隐藏搜索栏，保留标题栏和标签页 */
+  #cfm-popup.cfm-bottom-fullscreen-active.cfm-fs-to-tabs
+    > .cfm-global-search-bar {
+    display: none !important;
+  }
+
+  /* 模式3: true-full —— 隐藏标题栏+标签页+搜索栏，完全全屏 */
+  #cfm-popup.cfm-bottom-fullscreen-active.cfm-fs-true-full > .cfm-header {
+    display: none !important;
+  }
+  #cfm-popup.cfm-bottom-fullscreen-active.cfm-fs-true-full
+    > .cfm-resource-tabs {
+    display: none !important;
+  }
+  #cfm-popup.cfm-bottom-fullscreen-active.cfm-fs-true-full
+    > .cfm-global-search-bar {
+    display: none !important;
   }
 }
 
@@ -6452,6 +6507,59 @@ input[type="number"].cfm-wi-de-input::-webkit-outer-spin-button {
   color: #89b4fa;
   flex: 0 0 auto;
 }
+/* ==================== 批量操作进度覆盖层 ==================== */
+.cfm-batch-progress-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(17, 17, 27, 0.52);
+  backdrop-filter: blur(1.5px);
+  z-index: 10020;
+  pointer-events: auto;
+}
+.cfm-batch-progress-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  min-width: 220px;
+  padding: 14px 22px;
+  max-width: min(calc(100vw - 32px), 480px);
+  border-radius: 999px;
+  background: rgba(24, 24, 37, 0.98);
+  border: 1px solid rgba(137, 180, 250, 0.28);
+  color: #eef4ff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: center;
+  white-space: normal;
+  word-break: break-word;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+}
+.cfm-batch-progress-box i.fa-spinner {
+  color: #89b4fa;
+  flex: 0 0 auto;
+  font-size: 14px;
+}
+.cfm-batch-progress-box .cfm-batch-progress-text {
+  color: inherit;
+  opacity: 1;
+}
+.cfm-batch-progress-box .cfm-batch-progress-counter {
+  color: #89b4fa;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  margin-left: 2px;
+}
 .cfm-persona-detail-section {
   display: flex;
   flex-direction: column;
@@ -6845,6 +6953,34 @@ input[type="number"].cfm-wi-de-input::-webkit-outer-spin-button {
   text-overflow: ellipsis;
   line-height: 1.4;
   max-width: 100%;
+}
+
+/* 原生弹窗中的置顶按钮 */
+.cfm-native-chat-pin-btn {
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    transform 0.15s;
+}
+.cfm-native-chat-pin-btn:hover {
+  color: #f9e2af !important;
+  opacity: 1 !important;
+}
+/* 已置顶状态 */
+.cfm-native-chat-pin-btn.cfm-native-chat-pinned {
+  color: #f9e2af !important;
+  opacity: 1 !important;
+}
+.cfm-native-chat-pin-btn.cfm-native-chat-pinned::before {
+  /* 图钉旋转表示已固定 */
+  display: inline-block;
+  transform: rotate(-45deg);
+}
+
+/* 原生弹窗中已置顶的聊天记录行高亮 */
+.cfm-native-chat-pinned .select_chat_block {
+  border-left: 2px solid rgba(249, 226, 175, 0.6);
 }
 
 /* 原生弹窗中的备注编辑按钮 */

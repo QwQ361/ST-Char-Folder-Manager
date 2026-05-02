@@ -3182,6 +3182,93 @@ jQuery(async () => {
   }
 
   /**
+   * 导入失败详情弹窗 —— 列出失败的文件名，供用户确认
+   * @param {string[]} failedFiles - 失败的文件名列表
+   * @param {string} resourceType - 资源类型显示名（"角色卡" / "预设" / "世界书" 等）
+   */
+  function showImportFailureDialog(failedFiles, resourceType) {
+    if (!failedFiles || failedFiles.length === 0) return;
+    const count = failedFiles.length;
+    const listHtml =
+      count <= 12
+        ? failedFiles
+            .map(
+              (n) =>
+                `<li style="margin:2px 0;color:var(--SmartThemeQuoteColor,#f5c542);word-break:break-all;">${n}</li>`,
+            )
+            .join("")
+        : failedFiles
+            .slice(0, 11)
+            .map(
+              (n) =>
+                `<li style="margin:2px 0;color:var(--SmartThemeQuoteColor,#f5c542);word-break:break-all;">${n}</li>`,
+            )
+            .join("") +
+          `<li style="margin:2px 0;color:var(--SmartThemeBodyColor);">...等共 ${count} 个</li>`;
+
+    const dialogHtml = `
+      <div style="padding:16px 20px;max-width:460px;width:100%;box-sizing:border-box;">
+        <div style="margin-bottom:10px;font-size:14px;font-weight:bold;color:var(--SmartThemeBodyColor,#ccc);">
+          以下 ${count} 个${resourceType}导入失败：
+        </div>
+        <ul style="list-style:none;padding:0;margin:0 0 14px 8px;font-size:13px;max-height:45vh;overflow-y:auto;">
+          ${listHtml}
+        </ul>
+        <div style="display:flex;justify-content:flex-end;">
+          <button class="cfm-fail-dialog-ok" style="padding:8px 28px;font-size:13px;cursor:pointer;background:var(--SmartThemeBlurTintColor,#2a2a3e);color:var(--SmartThemeBodyColor,#ccc);border:1px solid var(--SmartThemeBorderColor,#555);border-radius:5px;">确定</button>
+        </div>
+      </div>
+    `;
+
+    const overlay = $("<div>").css({
+      position: "fixed",
+      top: 0,
+      left: 0,
+      width: "100vw",
+      height: "100vh",
+      background: "rgba(0,0,0,0.6)",
+      zIndex: 99999,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "16px",
+      boxSizing: "border-box",
+      overflow: "auto",
+    });
+
+    const dialog = $("<div>")
+      .css({
+        background: "var(--SmartThemeBlurTintColor, #1a1a2e)",
+        border: "1px solid var(--SmartThemeBorderColor, #444)",
+        borderRadius: "8px",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+        color: "var(--SmartThemeBodyColor, #ccc)",
+        maxWidth: "calc(100vw - 32px)",
+        maxHeight: "calc(100vh - 32px)",
+        overflow: "auto",
+        writingMode: "horizontal-tb",
+        boxSizing: "border-box",
+      })
+      .html(dialogHtml);
+
+    overlay.append(dialog);
+    $("body").append(overlay);
+
+    overlay.find(".cfm-fail-dialog-ok").on("click", function () {
+      overlay.remove();
+    });
+
+    // ESC 关闭
+    const escHandler = (evt) => {
+      if (evt.key === "Escape") {
+        overlay.remove();
+        document.removeEventListener("keydown", escHandler);
+      }
+    };
+    document.addEventListener("keydown", escHandler);
+  }
+
+  /**
    * 生成不重复的名称（末尾加 -1, -2, ...）
    * @param {string} baseName - 原始名称
    * @param {Set<string>} existingNames - 已存在的名称集合
@@ -3380,6 +3467,9 @@ jQuery(async () => {
     // 移动端顶部栏避让开关（默认开启）
     if (extension_settings[extensionName].mobileTopbarAvoid === undefined)
       extension_settings[extensionName].mobileTopbarAvoid = true;
+    // 移动端下栏全屏模式："to-search"(至搜索栏，默认) | "to-tabs"(至标签页) | "true-full"(真全屏)
+    if (!extension_settings[extensionName].mobileFullscreenMode)
+      extension_settings[extensionName].mobileFullscreenMode = "to-search";
     // 界面语言："zh-CN"(简体中文，默认) | "zh-TW"(繁体中文)
     if (!extension_settings[extensionName].language)
       extension_settings[extensionName].language = "zh-CN";
@@ -3545,9 +3635,11 @@ jQuery(async () => {
 
   function getTabMenuConfig() {
     ensureTabMenuConfig();
-    return extension_settings[extensionName].customLayout?.tabMenu || {
-      enabled: false,
-    };
+    return (
+      extension_settings[extensionName].customLayout?.tabMenu || {
+        enabled: false,
+      }
+    );
   }
 
   /** 获取当前生效的标签页列表（已排序、已过滤不可见） */
@@ -3582,13 +3674,18 @@ jQuery(async () => {
   function getOrderedTabs() {
     const layout = extension_settings[extensionName].customLayout;
     if (!layout || !layout.tabs)
-      return CFM_TAB_META.map((t) => ({ id: t.id, visible: true, menu: false }));
+      return CFM_TAB_META.map((t) => ({
+        id: t.id,
+        visible: true,
+        menu: false,
+      }));
     ensureTabMenuConfig();
     // 确保所有标签页都在列表中（防止新增标签页丢失）
     const existing = new Set(layout.tabs.map((t) => t.id));
     const result = [...layout.tabs];
     for (const meta of CFM_TAB_META) {
-      if (!existing.has(meta.id)) result.push({ id: meta.id, visible: true, menu: false });
+      if (!existing.has(meta.id))
+        result.push({ id: meta.id, visible: true, menu: false });
     }
     for (const tab of result) {
       if (tab.menu === undefined) tab.menu = false;
@@ -3603,7 +3700,11 @@ jQuery(async () => {
       // 没有保存的配置时，根据 CFM_ACTION_BTN_MAP 生成默认可见列表
       const knownIds = CFM_ACTION_BTN_MAP[tabId];
       if (knownIds) {
-        return Object.keys(knownIds).map((id) => ({ id, visible: true, menu: false }));
+        return Object.keys(knownIds).map((id) => ({
+          id,
+          visible: true,
+          menu: false,
+        }));
       }
       return [];
     }
@@ -3618,11 +3719,25 @@ jQuery(async () => {
       const existingIds = new Set(saved.map((a) => a.id));
       // 默认顺序参考表
       const defaultOrder = {
-        chars: ["import", "chatmode", "regexmode", "quickedit", "export", "delete"],
+        chars: [
+          "import",
+          "chatmode",
+          "regexmode",
+          "quickedit",
+          "export",
+          "delete",
+        ],
         worldinfo: ["import", "note", "rename", "export", "delete"],
         presets: ["import", "regexmode", "note", "rename", "export", "delete"],
         themes: ["import", "note", "rename", "export", "delete"],
-        backgrounds: ["import", "note", "rename", "default", "export", "delete"],
+        backgrounds: [
+          "import",
+          "note",
+          "rename",
+          "default",
+          "export",
+          "delete",
+        ],
         personas: ["import", "note", "export", "delete"],
         regex: ["import", "create", "transfer", "export", "delete", "sort"],
         quickreply: ["import", "note", "rename", "export", "delete"],
@@ -3644,7 +3759,11 @@ jQuery(async () => {
           } else {
             insertIdx = 0;
           }
-          saved.splice(insertIdx, 0, { id: actionId, visible: true, menu: false });
+          saved.splice(insertIdx, 0, {
+            id: actionId,
+            visible: true,
+            menu: false,
+          });
         }
       }
     }
@@ -3654,22 +3773,31 @@ jQuery(async () => {
   function ensureToolbarMenuConfig() {
     const layout = extension_settings[extensionName].customLayout;
     if (!layout) return;
-    if (!layout.tabMenus || Array.isArray(layout.tabMenus)) layout.tabMenus = {};
+    if (!layout.tabMenus || Array.isArray(layout.tabMenus))
+      layout.tabMenus = {};
     for (const meta of CFM_TAB_META) {
-      if (!layout.tabMenus[meta.id]) layout.tabMenus[meta.id] = { enabled: false };
-      if (layout.tabMenus[meta.id].enabled === undefined) layout.tabMenus[meta.id].enabled = false;
+      if (!layout.tabMenus[meta.id])
+        layout.tabMenus[meta.id] = { enabled: false };
+      if (layout.tabMenus[meta.id].enabled === undefined)
+        layout.tabMenus[meta.id].enabled = false;
     }
   }
 
   function getToolbarMenuConfig(tabId) {
     ensureToolbarMenuConfig();
-    return extension_settings[extensionName].customLayout?.tabMenus?.[tabId] || { enabled: false };
+    return (
+      extension_settings[extensionName].customLayout?.tabMenus?.[tabId] || {
+        enabled: false,
+      }
+    );
   }
 
   function getToolbarMenuActions(tabId) {
     const menuCfg = getToolbarMenuConfig(tabId);
     if (!menuCfg.enabled) return [];
-    return getOrderedActions(tabId).filter((a) => a.menu === true).map((a) => a.id);
+    return getOrderedActions(tabId)
+      .filter((a) => a.menu === true)
+      .map((a) => a.id);
   }
 
   /** 获取某标签页可见的子功能 ID 列表 */
@@ -8904,6 +9032,52 @@ jQuery(async () => {
     return normalized;
   }
 
+  // ==================== 批量操作进度覆盖层 ====================
+  /**
+   * 显示批量操作进度覆盖层（带旋转加载图标和实时进度计数）
+   * @param {string} actionLabel - 操作描述文本，如 "正在批量重命名主题"
+   * @param {number} total - 总数
+   * @returns {{ update: (current: number, customText?: string) => void, done: (resultText?: string) => void, remove: () => void }}
+   */
+  function showBatchProgressOverlay(actionLabel, total) {
+    // 移除可能残留的上一个
+    $(".cfm-batch-progress-overlay").remove();
+    const overlay = $(
+      `<div class="cfm-batch-progress-overlay" aria-live="polite" aria-busy="true">
+        <div class="cfm-batch-progress-box">
+          <i class="fa-solid fa-spinner fa-spin"></i>
+          <span class="cfm-batch-progress-text">${escapeHtml(actionLabel)}</span>
+          <span class="cfm-batch-progress-counter">0/${total}</span>
+        </div>
+      </div>`,
+    );
+    $("body").append(overlay);
+    const textEl = overlay.find(".cfm-batch-progress-text");
+    const counterEl = overlay.find(".cfm-batch-progress-counter");
+    return {
+      /** 更新进度计数 */
+      update(current, customText) {
+        counterEl.text(`${current}/${total}`);
+        if (customText) textEl.text(customText);
+      },
+      /** 操作完成，短暂显示结果后自动移除 */
+      done(resultText) {
+        overlay
+          .find("i.fa-spinner")
+          .removeClass("fa-spin")
+          .removeClass("fa-spinner")
+          .addClass("fa-check");
+        counterEl.text(`${total}/${total}`);
+        if (resultText) textEl.text(resultText);
+        setTimeout(() => overlay.remove(), 600);
+      },
+      /** 立即移除覆盖层 */
+      remove() {
+        overlay.remove();
+      },
+    };
+  }
+
   function showEntryTransferProgressLoading(
     sourceEntries,
     targetType,
@@ -9692,7 +9866,11 @@ jQuery(async () => {
       }
       const zip = new JSZip();
       let success = 0;
-      cfmToastr.info(`正在导出 ${avatars.length} 个角色卡...`);
+      const batchProgress = showBatchProgressOverlay(
+        "正在导出角色卡",
+        avatars.length,
+      );
+      let processed = 0;
       for (const avatar of avatars) {
         try {
           const resp = await fetch("/api/characters/export", {
@@ -9708,8 +9886,13 @@ jQuery(async () => {
         } catch (e) {
           console.warn(`[CFM] 导出角色卡 ${avatar} 失败`, e);
         }
+        processed++;
+        batchProgress.update(processed);
       }
-      if (success === 0) throw new Error("没有成功导出任何角色卡");
+      if (success === 0) {
+        batchProgress.remove();
+        throw new Error("没有成功导出任何角色卡");
+      }
       const content = await zip.generateAsync({ type: "blob" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(content);
@@ -9718,7 +9901,9 @@ jQuery(async () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
-      cfmToastr.success(`已导出 ${success} 个角色卡`);
+      const exportCharMsg = `已导出 ${success} 个角色卡`;
+      batchProgress.done(exportCharMsg);
+      cfmToastr.success(exportCharMsg);
     }
   }
 
@@ -9777,7 +9962,11 @@ jQuery(async () => {
       }
       const zip = new JSZip();
       let success = 0;
-      cfmToastr.info(`正在导出 ${presetNames.length} 个预设...`);
+      const batchProgress = showBatchProgressOverlay(
+        "正在导出预设",
+        presetNames.length,
+      );
+      let processed = 0;
       for (const name of presetNames) {
         try {
           const preset = getPresetData(name);
@@ -9789,8 +9978,13 @@ jQuery(async () => {
         } catch (e) {
           console.warn(`[CFM] 导出预设 ${name} 失败`, e);
         }
+        processed++;
+        batchProgress.update(processed);
       }
-      if (success === 0) throw new Error("没有成功导出任何预设");
+      if (success === 0) {
+        batchProgress.remove();
+        throw new Error("没有成功导出任何预设");
+      }
       const content = await zip.generateAsync({ type: "blob" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(content);
@@ -9799,7 +9993,9 @@ jQuery(async () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
-      cfmToastr.success(`已导出 ${success} 个预设`);
+      const exportPresetMsg = `已导出 ${success} 个预设`;
+      batchProgress.done(exportPresetMsg);
+      cfmToastr.success(exportPresetMsg);
     }
   }
 
@@ -9841,7 +10037,11 @@ jQuery(async () => {
       }
       const zip = new JSZip();
       let success = 0;
-      cfmToastr.info(`正在导出 ${setNames.length} 个快速回复集...`);
+      const batchProgress = showBatchProgressOverlay(
+        "正在导出快速回复集",
+        setNames.length,
+      );
+      let processed = 0;
       for (const name of setNames) {
         try {
           const data = getSetData(name);
@@ -9853,8 +10053,13 @@ jQuery(async () => {
         } catch (e) {
           console.warn(`[CFM] 导出快速回复集 ${name} 失败`, e);
         }
+        processed++;
+        batchProgress.update(processed);
       }
-      if (success === 0) throw new Error("没有成功导出任何快速回复集");
+      if (success === 0) {
+        batchProgress.remove();
+        throw new Error("没有成功导出任何快速回复集");
+      }
       const content = await zip.generateAsync({ type: "blob" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(content);
@@ -9863,7 +10068,9 @@ jQuery(async () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
-      cfmToastr.success(`已导出 ${success} 个快速回复集`);
+      const exportQrMsg = `已导出 ${success} 个快速回复集`;
+      batchProgress.done(exportQrMsg);
+      cfmToastr.success(exportQrMsg);
     }
   }
 
@@ -9894,7 +10101,11 @@ jQuery(async () => {
       }
       const zip = new JSZip();
       let success = 0;
-      cfmToastr.info(`正在导出 ${wiNames.length} 个世界书...`);
+      const batchProgress = showBatchProgressOverlay(
+        "正在导出世界书",
+        wiNames.length,
+      );
+      let processed = 0;
       for (const name of wiNames) {
         try {
           const resp = await fetch("/api/worldinfo/get", {
@@ -9912,8 +10123,13 @@ jQuery(async () => {
         } catch (e) {
           console.warn(`[CFM] 导出世界书 ${name} 失败`, e);
         }
+        processed++;
+        batchProgress.update(processed);
       }
-      if (success === 0) throw new Error("没有成功导出任何世界书");
+      if (success === 0) {
+        batchProgress.remove();
+        throw new Error("没有成功导出任何世界书");
+      }
       const content = await zip.generateAsync({ type: "blob" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(content);
@@ -9922,7 +10138,9 @@ jQuery(async () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
-      cfmToastr.success(`已导出 ${success} 个世界书`);
+      const exportWiMsg = `已导出 ${success} 个世界书`;
+      batchProgress.done(exportWiMsg);
+      cfmToastr.success(exportWiMsg);
     }
   }
 
@@ -9969,7 +10187,11 @@ jQuery(async () => {
       }
       const zip = new JSZip();
       let success = 0;
-      cfmToastr.info(`正在导出 ${themeNameList.length} 个主题...`);
+      const batchProgress = showBatchProgressOverlay(
+        "正在导出主题",
+        themeNameList.length,
+      );
+      let processed = 0;
       for (const name of themeNameList) {
         try {
           const td = getThemeData(name);
@@ -9980,8 +10202,13 @@ jQuery(async () => {
         } catch (e) {
           console.warn(`[CFM] 导出主题 ${name} 失败`, e);
         }
+        processed++;
+        batchProgress.update(processed);
       }
-      if (success === 0) throw new Error("没有成功导出任何主题");
+      if (success === 0) {
+        batchProgress.remove();
+        throw new Error("没有成功导出任何主题");
+      }
       const content = await zip.generateAsync({ type: "blob" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(content);
@@ -9990,7 +10217,9 @@ jQuery(async () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
-      cfmToastr.success(`已导出 ${success} 个主题`);
+      const exportThemeMsg = `已导出 ${success} 个主题`;
+      batchProgress.done(exportThemeMsg);
+      cfmToastr.success(exportThemeMsg);
     }
   }
 
@@ -10019,7 +10248,11 @@ jQuery(async () => {
       }
       const zip = new JSZip();
       let success = 0;
-      cfmToastr.info(`正在导出 ${bgNames.length} 个背景...`);
+      const batchProgress = showBatchProgressOverlay(
+        "正在导出背景",
+        bgNames.length,
+      );
+      let processed = 0;
       for (const name of bgNames) {
         try {
           const resp = await fetch(`/backgrounds/${encodeURIComponent(name)}`);
@@ -10031,8 +10264,13 @@ jQuery(async () => {
         } catch (e) {
           console.warn(`[CFM] 导出背景 ${name} 失败`, e);
         }
+        processed++;
+        batchProgress.update(processed);
       }
-      if (success === 0) throw new Error("没有成功导出任何背景");
+      if (success === 0) {
+        batchProgress.remove();
+        throw new Error("没有成功导出任何背景");
+      }
       const content = await zip.generateAsync({ type: "blob" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(content);
@@ -10041,7 +10279,9 @@ jQuery(async () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
-      cfmToastr.success(`已导出 ${success} 个背景`);
+      const exportBgMsg = `已导出 ${success} 个背景`;
+      batchProgress.done(exportBgMsg);
+      cfmToastr.success(exportBgMsg);
     }
   }
 
@@ -10135,8 +10375,15 @@ jQuery(async () => {
     if (!pu.personas) pu.personas = {};
     if (!pu.persona_descriptions) pu.persona_descriptions = {};
 
+    const personaEntries = Object.entries(data.personas);
+    const batchProgress = showBatchProgressOverlay(
+      "正在导入User",
+      personaEntries.length,
+    );
+    let processed = 0;
+
     // 合并 personas
-    for (const [key, value] of Object.entries(data.personas)) {
+    for (const [key, value] of personaEntries) {
       const existsInSettings = key in pu.personas;
       const existsOnServer = avatarsList.includes(key);
 
@@ -10192,6 +10439,8 @@ jQuery(async () => {
           console.error(`[CFM] 上传默认头像失败 (${key}):`, uploadErr);
         }
       }
+      processed++;
+      batchProgress.update(processed);
     }
 
     // 合并 persona_descriptions
@@ -10232,15 +10481,18 @@ jQuery(async () => {
     getContext().saveSettingsDebounced();
 
     if (warnings.length) {
-      cfmToastr.success(
-        `已导入 ${importedCount} 个 Persona（有 ${warnings.length} 条警告）`,
-      );
+      const importPersonaMsg = `已导入 ${importedCount} 个 Persona（有 ${warnings.length} 条警告）`;
+      batchProgress.done(importPersonaMsg);
+      cfmToastr.success(importPersonaMsg);
       console.warn(
         `[CFM] PERSONA 导入报告\n====================\n${warnings.join("\n")}`,
       );
     } else if (importedCount > 0) {
-      cfmToastr.success(`已成功导入 ${importedCount} 个 Persona`);
+      const importPersonaMsg = `已成功导入 ${importedCount} 个 Persona`;
+      batchProgress.done(importPersonaMsg);
+      cfmToastr.success(importPersonaMsg);
     } else {
+      batchProgress.done("没有新的 Persona 需要导入");
       cfmToastr.info("没有新的 Persona 需要导入（全部已存在）");
     }
 
@@ -10401,9 +10653,12 @@ jQuery(async () => {
     let success = 0;
     let fail = 0;
 
+    const batchProgress = showBatchProgressOverlay(
+      `正在删除${typeLabel}`,
+      count,
+    );
+    let processed = 0;
     try {
-      cfmToastr.info(`正在删除 ${count} 个${typeLabel}...`);
-
       if (currentResourceType === "chars") {
         const ctx = getContext();
         const evtSource = ctx.eventSource;
@@ -10450,6 +10705,8 @@ jQuery(async () => {
             console.warn(`[CFM] 删除角色卡 ${avatar} 失败`, e);
             fail++;
           }
+          processed++;
+          batchProgress.update(processed);
         }
         // 刷新角色列表
         await getContext().getCharacters();
@@ -10484,6 +10741,8 @@ jQuery(async () => {
             console.warn(`[CFM] 删除预设 ${name} 失败`, e);
             fail++;
           }
+          processed++;
+          batchProgress.update(processed);
         }
       } else if (currentResourceType === "themes") {
         for (const name of selected) {
@@ -10535,6 +10794,8 @@ jQuery(async () => {
             console.warn(`[CFM] 删除主题 ${name} 失败`, e);
             fail++;
           }
+          processed++;
+          batchProgress.update(processed);
         }
       } else if (currentResourceType === "backgrounds") {
         for (const name of selected) {
@@ -10581,6 +10842,8 @@ jQuery(async () => {
             console.warn(`[CFM] 删除背景 ${name} 失败`, e);
             fail++;
           }
+          processed++;
+          batchProgress.update(processed);
         }
       } else if (currentResourceType === "personas") {
         for (const avatarId of selected) {
@@ -10635,6 +10898,8 @@ jQuery(async () => {
             console.warn(`[CFM] 删除User ${avatarId} 失败`, e);
             fail++;
           }
+          processed++;
+          batchProgress.update(processed);
         }
       } else if (currentResourceType === "regex") {
         // 删除全局正则脚本（直接从 extension_settings.regex 数组中移除）
@@ -10659,6 +10924,8 @@ jQuery(async () => {
             } else {
               fail++;
             }
+            processed++;
+            batchProgress.update(processed);
           }
           // 保存正则设置
           getContext().saveSettingsDebounced();
@@ -10735,6 +11002,8 @@ jQuery(async () => {
             console.warn(`[CFM] 删除快速回复集 ${name} 失败`, e);
             fail++;
           }
+          processed++;
+          batchProgress.update(processed);
         }
       } else {
         for (const name of selected) {
@@ -10789,27 +11058,29 @@ jQuery(async () => {
             console.warn(`[CFM] 删除世界书 ${name} 失败`, e);
             fail++;
           }
+          processed++;
+          batchProgress.update(processed);
         }
         // 强制通过API刷新世界书缓存
         _worldInfoNamesCache = null;
         await getWorldInfoNames(true);
       }
 
+      const delResultMsg = `已删除 ${success} 个${typeLabel}${fail > 0 ? `，${fail} 个失败` : ""}`;
       if (success > 0) {
-        cfmToastr.success(
-          `已删除 ${success} 个${typeLabel}${fail > 0 ? `，${fail} 个失败` : ""}`,
-          "",
-          {
-            timeOut: 2500,
-            extendedTimeOut: 800,
-          },
-        );
+        batchProgress.done(delResultMsg);
+        cfmToastr.success(delResultMsg, "", {
+          timeOut: 2500,
+          extendedTimeOut: 800,
+        });
         // 保存文件夹分配变更
         getContext().saveSettingsDebounced();
       } else {
+        batchProgress.remove();
         cfmToastr.error(`删除失败`);
       }
     } catch (err) {
+      batchProgress.remove();
       console.error("[CFM] 删除失败", err);
       cfmToastr.error("删除失败: " + err.message);
     }
@@ -11886,7 +12157,11 @@ jQuery(async () => {
       let success = 0,
         skipped = 0,
         failed = 0;
-      cfmToastr.info(`正在批量重命名 ${names.length} 个主题...`);
+      const batchProgress = showBatchProgressOverlay(
+        "正在批量重命名主题",
+        names.length,
+      );
+      let processed = 0;
       for (const oldName of names) {
         let newName;
         if (action === "add-prefix") newName = text + oldName;
@@ -11894,28 +12169,38 @@ jQuery(async () => {
         else if (action === "del-prefix") {
           if (!oldName.startsWith(text)) {
             skipped++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           newName = oldName.substring(text.length);
         } else if (action === "del-suffix") {
           if (!oldName.endsWith(text)) {
             skipped++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           newName = oldName.substring(0, oldName.length - text.length);
         }
         if (!newName || newName === oldName) {
           skipped++;
+          processed++;
+          batchProgress.update(processed);
           continue;
         }
         if (existingThemes.has(newName)) {
           skipped++;
+          processed++;
+          batchProgress.update(processed);
           continue;
         }
         try {
           const themeData = getThemeData(oldName);
           if (!themeData) {
             failed++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           themeData.name = newName;
@@ -11950,10 +12235,13 @@ jQuery(async () => {
           console.warn(`[CFM] 重命名主题 ${oldName} 失败`, e);
           failed++;
         }
+        processed++;
+        batchProgress.update(processed);
       }
       let msg = `已重命名 ${success} 个主题`;
       if (skipped > 0) msg += `，${skipped} 个因前/后缀不匹配或名称冲突而跳过`;
       if (failed > 0) msg += `，${failed} 个失败`;
+      batchProgress.done(msg);
       if (success > 0) cfmToastr.success(msg);
       else cfmToastr.warning(msg);
     }
@@ -12196,14 +12484,16 @@ jQuery(async () => {
             e.preventDefault();
             overlay.find(".cfm-edit-popup-confirm").trigger("click");
           }
-          if (e.key === "Escape") overlay.find(".cfm-edit-popup-cancel").trigger("click");
+          if (e.key === "Escape")
+            overlay.find(".cfm-edit-popup-cancel").trigger("click");
         });
         overlay.find("#cfm-rename-text").on("keydown", (e) => {
           if (e.key === "Enter") {
             e.preventDefault();
             overlay.find(".cfm-edit-popup-confirm").trigger("click");
           }
-          if (e.key === "Escape") overlay.find(".cfm-edit-popup-cancel").trigger("click");
+          if (e.key === "Escape")
+            overlay.find(".cfm-edit-popup-cancel").trigger("click");
         });
       });
     }
@@ -12263,7 +12553,11 @@ jQuery(async () => {
       let success = 0,
         skipped = 0,
         failed = 0;
-      cfmToastr.info(`正在批量重命名 ${names.length} 个背景...`);
+      const batchProgress = showBatchProgressOverlay(
+        "正在批量重命名背景",
+        names.length,
+      );
+      let processed = 0;
       for (let i = 0; i < names.length; i++) {
         const oldName = names[i];
         const dotIdx = oldName.lastIndexOf(".");
@@ -12273,16 +12567,21 @@ jQuery(async () => {
         if (action === "add-prefix") newBase = text + baseName;
         else if (action === "add-suffix") newBase = baseName + text;
         else if (action === "same-name-suffix") {
-          newBase = i === 0 ? base : `${base}${buildAutoIncrementSuffix(text, i)}`;
+          newBase =
+            i === 0 ? base : `${base}${buildAutoIncrementSuffix(text, i)}`;
         } else if (action === "del-prefix") {
           if (!baseName.startsWith(text)) {
             skipped++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           newBase = baseName.substring(text.length);
         } else if (action === "del-suffix") {
           if (!baseName.endsWith(text)) {
             skipped++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           newBase = baseName.substring(0, baseName.length - text.length);
@@ -12290,6 +12589,8 @@ jQuery(async () => {
         const newName = newBase + ext;
         if (!newBase || newName === oldName) {
           skipped++;
+          processed++;
+          batchProgress.update(processed);
           continue;
         }
         try {
@@ -12300,6 +12601,8 @@ jQuery(async () => {
           });
           if (!resp.ok) {
             failed++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           $("#bg_menu_content .bg_example")
@@ -12314,10 +12617,13 @@ jQuery(async () => {
           console.warn(`[CFM] 重命名背景 ${oldName} 失败`, e);
           failed++;
         }
+        processed++;
+        batchProgress.update(processed);
       }
       let msg = `已重命名 ${success} 个背景`;
       if (skipped > 0) msg += `，${skipped} 个因前/后缀不匹配或名称冲突而跳过`;
       if (failed > 0) msg += `，${failed} 个失败`;
+      batchProgress.done(msg);
       if (success > 0) cfmToastr.success(msg);
       else cfmToastr.warning(msg);
     }
@@ -14328,13 +14634,14 @@ jQuery(async () => {
     overlay.find("#cfm-wi-preset-edit-folder-btn").on("click", function (e) {
       e.preventDefault();
       e.stopPropagation();
-      const currentCheckedInput = overlay.find(
-        ".cfm-wi-preset-edit-item input:checked",
-      ).first();
+      const currentCheckedInput = overlay
+        .find(".cfm-wi-preset-edit-item input:checked")
+        .first();
       const currentCheckedItem = currentCheckedInput.closest(
         ".cfm-wi-preset-edit-item",
       );
-      const currentCheckedFolderRaw = currentCheckedItem.attr("data-folder") || "";
+      const currentCheckedFolderRaw =
+        currentCheckedItem.attr("data-folder") || "";
       const currentCheckedFolder =
         currentCheckedFolderRaw && wiTree[currentCheckedFolderRaw]
           ? currentCheckedFolderRaw
@@ -15189,7 +15496,11 @@ jQuery(async () => {
       let skipped = 0;
       let failed = 0;
 
-      cfmToastr.info(`正在批量重命名 ${names.length} 个快速回复集...`);
+      const batchProgress = showBatchProgressOverlay(
+        "正在批量重命名快速回复集",
+        names.length,
+      );
+      let processed = 0;
 
       for (const oldName of names) {
         let newName;
@@ -15200,18 +15511,24 @@ jQuery(async () => {
         } else if (action === "del-prefix") {
           if (!oldName.startsWith(text)) {
             skipped++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           newName = oldName.substring(text.length);
         } else if (action === "del-suffix") {
           if (!oldName.endsWith(text)) {
             skipped++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           newName = oldName.substring(0, oldName.length - text.length);
         }
         if (!newName || newName === oldName) {
           skipped++;
+          processed++;
+          batchProgress.update(processed);
           continue;
         }
         try {
@@ -15224,6 +15541,8 @@ jQuery(async () => {
           }
           if (!set) {
             failed++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           const setData = set.toJSON
@@ -15237,6 +15556,8 @@ jQuery(async () => {
           });
           if (!saveResp.ok) {
             failed++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           await fetch("/api/quick-replies/delete", {
@@ -15257,10 +15578,13 @@ jQuery(async () => {
           console.warn(`[CFM] 重命名快速回复集 ${oldName} 失败`, e);
           failed++;
         }
+        processed++;
+        batchProgress.update(processed);
       }
       let msg = `已重命名 ${success} 个快速回复集`;
       if (skipped > 0) msg += `，${skipped} 个因前/后缀不匹配或名称冲突而跳过`;
       if (failed > 0) msg += `，${failed} 个失败`;
+      batchProgress.done(msg);
       if (success > 0) cfmToastr.success(msg);
       else cfmToastr.warning(msg);
     }
@@ -15696,7 +16020,11 @@ jQuery(async () => {
       let skipped = 0;
       let failed = 0;
 
-      cfmToastr.info(`正在批量重命名 ${names.length} 个预设...`);
+      const batchProgress = showBatchProgressOverlay(
+        "正在批量重命名预设",
+        names.length,
+      );
+      let processed = 0;
 
       for (const oldName of names) {
         let newName;
@@ -15707,29 +16035,39 @@ jQuery(async () => {
         } else if (action === "del-prefix") {
           if (!oldName.startsWith(text)) {
             skipped++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           newName = oldName.substring(text.length);
         } else if (action === "del-suffix") {
           if (!oldName.endsWith(text)) {
             skipped++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           newName = oldName.substring(0, oldName.length - text.length);
         }
         if (!newName || newName === oldName) {
           skipped++;
+          processed++;
+          batchProgress.update(processed);
           continue;
         }
         // 检查新名称是否冲突
         if (existingPresets.has(newName)) {
           skipped++;
+          processed++;
+          batchProgress.update(processed);
           continue;
         }
         try {
           const presetData = getPresetDataForRename(pm, oldName);
           if (!presetData) {
             failed++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           await fetch("/api/presets/save", {
@@ -15757,10 +16095,13 @@ jQuery(async () => {
           console.warn(`[CFM] 重命名预设 ${oldName} 失败`, e);
           failed++;
         }
+        processed++;
+        batchProgress.update(processed);
       }
       let msg = `已重命名 ${success} 个预设`;
       if (skipped > 0) msg += `，${skipped} 个因前/后缀不匹配或名称冲突而跳过`;
       if (failed > 0) msg += `，${failed} 个失败`;
+      batchProgress.done(msg);
       if (success > 0) cfmToastr.success(msg);
       else cfmToastr.warning(msg);
     }
@@ -16897,31 +17238,45 @@ jQuery(async () => {
       return 0;
     }
 
+    const batchProgress = showBatchProgressOverlay(
+      "正在批量复制世界书条目",
+      targetUids.length,
+    );
     const worldInfoData = await fetchWorldInfoDetailData(normalizedName);
     const existingUids = Object.keys(worldInfoData.entries)
       .map(Number)
       .filter((n) => !isNaN(n));
     let nextUid = existingUids.length > 0 ? Math.max(...existingUids) + 1 : 0;
     let duplicatedCount = 0;
+    let processed = 0;
 
     for (const uid of targetUids) {
       const entry = worldInfoData?.entries?.[uid];
-      if (!entry) continue;
+      if (!entry) {
+        processed++;
+        batchProgress.update(processed);
+        continue;
+      }
       const cloned = structuredClone(entry);
       delete cloned.uid;
       cloned.uid = nextUid;
       worldInfoData.entries[nextUid] = cloned;
       nextUid++;
       duplicatedCount++;
+      processed++;
+      batchProgress.update(processed);
     }
 
     if (!duplicatedCount) {
+      batchProgress.remove();
       cfmToastr.warning("所选条目不支持复制操作");
       return 0;
     }
 
     await saveWorldInfoDetailData(normalizedName, worldInfoData);
-    cfmToastr.success(`已复制 ${duplicatedCount} 个世界书条目`);
+    const copyMsg = `已复制 ${duplicatedCount} 个世界书条目`;
+    batchProgress.done(copyMsg);
+    cfmToastr.success(copyMsg);
     refreshWorldInfoPanelView();
     return duplicatedCount;
   }
@@ -16954,11 +17309,20 @@ jQuery(async () => {
     );
     if (!confirmed) return 0;
 
+    const batchProgress = showBatchProgressOverlay(
+      "正在批量删除世界书条目",
+      targetUids.length,
+    );
     const worldInfoData = await fetchWorldInfoDetailData(normalizedName);
     let deletedCount = 0;
+    let processed = 0;
 
     for (const uid of targetUids) {
-      if (!worldInfoData?.entries?.[uid]) continue;
+      if (!worldInfoData?.entries?.[uid]) {
+        processed++;
+        batchProgress.update(processed);
+        continue;
+      }
       delete worldInfoData.entries[uid];
       // 清理 originalData
       if (
@@ -16973,15 +17337,20 @@ jQuery(async () => {
         }
       }
       deletedCount++;
+      processed++;
+      batchProgress.update(processed);
     }
 
     if (!deletedCount) {
+      batchProgress.remove();
       cfmToastr.warning("所选条目不支持删除操作");
       return 0;
     }
 
     await saveWorldInfoDetailData(normalizedName, worldInfoData);
-    cfmToastr.success(`已删除 ${deletedCount} 个世界书条目`);
+    const delMsg = `已删除 ${deletedCount} 个世界书条目`;
+    batchProgress.done(delMsg);
+    cfmToastr.success(delMsg);
     refreshWorldInfoPanelView();
     return deletedCount;
   }
@@ -19574,10 +19943,7 @@ jQuery(async () => {
           })
           .first();
         if (targetRow.length) {
-          targetRow[0].scrollIntoView({
-            block: "center",
-            behavior: "smooth",
-          });
+          scrollElementIntoViewCentered(targetRow[0]);
         }
       }, 0);
     };
@@ -21608,7 +21974,11 @@ jQuery(async () => {
       let skipped = 0;
       let failed = 0;
 
-      cfmToastr.info(`正在批量重命名 ${names.length} 个世界书...`);
+      const batchProgress = showBatchProgressOverlay(
+        "正在批量重命名世界书",
+        names.length,
+      );
+      let processed = 0;
 
       for (const oldName of names) {
         let newName;
@@ -21619,18 +21989,24 @@ jQuery(async () => {
         } else if (action === "del-prefix") {
           if (!oldName.startsWith(text)) {
             skipped++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           newName = oldName.substring(text.length);
         } else if (action === "del-suffix") {
           if (!oldName.endsWith(text)) {
             skipped++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           newName = oldName.substring(0, oldName.length - text.length);
         }
         if (!newName || newName === oldName) {
           skipped++;
+          processed++;
+          batchProgress.update(processed);
           continue;
         }
         try {
@@ -21641,6 +22017,8 @@ jQuery(async () => {
           });
           if (!resp.ok) {
             failed++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           const wiData = await resp.json();
@@ -21651,6 +22029,8 @@ jQuery(async () => {
           });
           if (!saveResp.ok) {
             failed++;
+            processed++;
+            batchProgress.update(processed);
             continue;
           }
           await fetch("/api/worldinfo/delete", {
@@ -21668,10 +22048,13 @@ jQuery(async () => {
           console.warn(`[CFM] 重命名世界书 ${oldName} 失败`, e);
           failed++;
         }
+        processed++;
+        batchProgress.update(processed);
       }
       let msg = `已重命名 ${success} 个世界书`;
       if (skipped > 0) msg += `，${skipped} 个因前/后缀不匹配或名称冲突而跳过`;
       if (failed > 0) msg += `，${failed} 个失败`;
+      batchProgress.done(msg);
       if (success > 0) cfmToastr.success(msg);
       else cfmToastr.warning(msg);
     }
@@ -21945,14 +22328,9 @@ jQuery(async () => {
     renderLeftTree();
     renderRightPane();
     // 自动滚动到目标角色卡行
-    requestAnimationFrame(() => {
-      const targetRow = document.querySelector(
-        "#cfm-right-list .cfm-regex-target-row",
-      );
-      if (targetRow) {
-        targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    });
+    scrollElementIntoViewCentered(() =>
+      document.querySelector("#cfm-right-list .cfm-regex-target-row"),
+    );
   }
 
   function exitCharRegexMode() {
@@ -22006,14 +22384,9 @@ jQuery(async () => {
     }
     renderPresetsView();
     // 自动滚动到目标预设行
-    requestAnimationFrame(() => {
-      const targetRow = document.querySelector(
-        "#cfm-preset-right-list .cfm-regex-target-row",
-      );
-      if (targetRow) {
-        targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    });
+    scrollElementIntoViewCentered(() =>
+      document.querySelector("#cfm-preset-right-list .cfm-regex-target-row"),
+    );
   }
 
   function exitPresetRegexMode() {
@@ -22063,33 +22436,24 @@ jQuery(async () => {
     renderLeftTree();
     renderRightPane();
 
-    requestAnimationFrame(() => {
-      const targetRow = Array.from(
+    scrollElementIntoViewCentered(() =>
+      Array.from(
         document.querySelectorAll("#cfm-right-list .cfm-row[data-avatar]"),
-      ).find((el) => el.getAttribute("data-avatar") === targetAvatar);
-      if (targetRow) {
-        targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    });
+      ).find((el) => el.getAttribute("data-avatar") === targetAvatar),
+    );
 
     if (targetAvatar) {
       getCharChats(targetAvatar)
         .then(() => {
           if (cfmChatMode && getCurrentCharAvatar() === targetAvatar) {
             renderRightPane();
-            requestAnimationFrame(() => {
-              const targetRow = Array.from(
+            scrollElementIntoViewCentered(() =>
+              Array.from(
                 document.querySelectorAll(
                   "#cfm-right-list .cfm-row[data-avatar]",
                 ),
-              ).find((el) => el.getAttribute("data-avatar") === targetAvatar);
-              if (targetRow) {
-                targetRow.scrollIntoView({
-                  behavior: "smooth",
-                  block: "center",
-                });
-              }
-            });
+              ).find((el) => el.getAttribute("data-avatar") === targetAvatar),
+            );
           }
         })
         .catch((e) => console.warn("[CFM] 刷新聊天模式目标失败:", e));
@@ -22129,14 +22493,9 @@ jQuery(async () => {
 
     renderLeftTree();
     renderRightPane();
-    requestAnimationFrame(() => {
-      const targetRow = document.querySelector(
-        "#cfm-right-list .cfm-regex-target-row",
-      );
-      if (targetRow) {
-        targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    });
+    scrollElementIntoViewCentered(() =>
+      document.querySelector("#cfm-right-list .cfm-regex-target-row"),
+    );
   }
 
   function refreshPresetRegexModeTargetFromCurrent() {
@@ -22163,14 +22522,9 @@ jQuery(async () => {
     }
 
     renderPresetsView();
-    requestAnimationFrame(() => {
-      const targetRow = document.querySelector(
-        "#cfm-preset-right-list .cfm-regex-target-row",
-      );
-      if (targetRow) {
-        targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    });
+    scrollElementIntoViewCentered(() =>
+      document.querySelector("#cfm-preset-right-list .cfm-regex-target-row"),
+    );
   }
 
   function refreshActiveViewerStateAfterSelectionChange({
@@ -22628,16 +22982,26 @@ jQuery(async () => {
             )
           )
             return;
+          const batchProgress = showBatchProgressOverlay(
+            "正在批量删除正则脚本",
+            toDeleteIds.length,
+          );
           try {
+            let processed = 0;
             for (const id of toDeleteIds) {
               const idx = scripts.findIndex((s) => s.id === id);
               if (idx !== -1) scripts.splice(idx, 1);
+              processed++;
+              batchProgress.update(processed);
             }
             await saveCharRegexScripts(avatar, scripts);
             cfmRegexBatchSelected.clear();
-            cfmToastr.success(`已删除 ${toDeleteIds.length} 个正则脚本`);
+            const delMsg = `已删除 ${toDeleteIds.length} 个正则脚本`;
+            batchProgress.done(delMsg);
+            cfmToastr.success(delMsg);
             rerenderCurrentView();
           } catch (err) {
+            batchProgress.remove();
             console.error("[CFM] 批量删除正则失败:", err);
             cfmToastr.error("删除失败: " + err.message);
           }
@@ -23433,16 +23797,26 @@ jQuery(async () => {
             )
           )
             return;
+          const batchProgress = showBatchProgressOverlay(
+            "正在批量删除正则脚本",
+            toDeleteIds.length,
+          );
           try {
+            let processed = 0;
             for (const id of toDeleteIds) {
               const idx = scripts.findIndex((s) => s.id === id);
               if (idx !== -1) scripts.splice(idx, 1);
+              processed++;
+              batchProgress.update(processed);
             }
             await savePresetRegexScripts(scripts, presetName);
             cfmRegexBatchSelected.clear();
-            cfmToastr.success(`已删除 ${toDeleteIds.length} 个正则脚本`);
+            const delMsg = `已删除 ${toDeleteIds.length} 个正则脚本`;
+            batchProgress.done(delMsg);
+            cfmToastr.success(delMsg);
             rerenderCurrentView();
           } catch (err) {
+            batchProgress.remove();
             console.error("[CFM] 批量删除正则失败:", err);
             cfmToastr.error("删除失败: " + err.message);
           }
@@ -24464,6 +24838,8 @@ jQuery(async () => {
       initChatNotes();
     }
 
+    const avatar = getCurrentCharAvatar();
+
     const wrappers = document.querySelectorAll(
       "#select_chat_div .select_chat_block_wrapper",
     );
@@ -24480,6 +24856,12 @@ jQuery(async () => {
       const fileNameFull = block.getAttribute("file_name") || "";
       const chatName = fileNameFull.replace(".jsonl", "");
       const note = cfmChatNotes[chatName];
+      const pinned = avatar ? isChatPinned(avatar, chatName) : false;
+
+      // 如果已置顶，添加置顶标记样式
+      if (pinned) {
+        wrapper.classList.add("cfm-native-chat-pinned");
+      }
 
       if (note) {
         // 在预览消息上方添加备注内容
@@ -24498,21 +24880,59 @@ jQuery(async () => {
         }
       }
 
-      // 添加备注编辑按钮（在操作按钮区域）
+      // 添加置顶按钮和备注编辑按钮（在操作按钮区域）
       const actionsContainer = wrapper.querySelector(
         ".flex-container.gap10px:last-child",
       );
       if (
         actionsContainer &&
-        !actionsContainer.querySelector(".cfm-native-chat-note-edit-btn")
+        !actionsContainer.querySelector(".cfm-native-chat-pin-btn")
       ) {
+        // 添加置顶按钮
+        if (avatar) {
+          const pinBtn = document.createElement("div");
+          pinBtn.className =
+            "cfm-native-chat-pin-btn opacity50p hoverglow fa-solid fa-thumbtack" +
+            (pinned ? " cfm-native-chat-pinned" : "");
+          pinBtn.title = pinned ? "取消置顶" : "置顶到最近聊天";
+          pinBtn.style.cursor = "pointer";
+          actionsContainer.insertBefore(pinBtn, actionsContainer.firstChild);
+
+          pinBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const nowPinned = togglePinChat(avatar, chatName);
+            // 刷新弹窗内容：移除所有增强标记，然后重新处理
+            document
+              .querySelectorAll("#select_chat_div .cfm-native-chat-enhanced")
+              .forEach((w) => {
+                w.classList.remove("cfm-native-chat-enhanced");
+                w.classList.remove("cfm-native-chat-pinned");
+                w.querySelectorAll(
+                  ".cfm-native-chat-note-line, .cfm-native-chat-note-edit-btn, .cfm-native-chat-pin-btn",
+                ).forEach((el) => el.remove());
+              });
+            enhanceNativeChatPopup();
+          });
+        }
+
+        // 添加备注编辑按钮
         const noteEditBtn = document.createElement("div");
         noteEditBtn.className =
           "cfm-native-chat-note-edit-btn opacity50p hoverglow fa-solid fa-pen-to-square";
         noteEditBtn.title = note ? "编辑备注" : "添加备注";
         noteEditBtn.style.cursor = "pointer";
-        // 插入到第一个按钮之前
-        actionsContainer.insertBefore(noteEditBtn, actionsContainer.firstChild);
+        // 插入到置顶按钮之后（或第一个按钮之前）
+        const pinBtnExisting = actionsContainer.querySelector(
+          ".cfm-native-chat-pin-btn",
+        );
+        if (pinBtnExisting) {
+          pinBtnExisting.insertAdjacentElement("afterend", noteEditBtn);
+        } else {
+          actionsContainer.insertBefore(
+            noteEditBtn,
+            actionsContainer.firstChild,
+          );
+        }
 
         noteEditBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
@@ -24525,14 +24945,14 @@ jQuery(async () => {
             cfmChatNotes[chatName] = newNote;
           }
           saveChatNotes();
-          // 刷新弹窗内容：移除所有增强标记和已注入的备注元素，然后重新处理
+          // 刷新弹窗内容：移除所有增强标记和已注入的元素，然后重新处理
           document
             .querySelectorAll("#select_chat_div .cfm-native-chat-enhanced")
             .forEach((w) => {
               w.classList.remove("cfm-native-chat-enhanced");
-              // 移除旧的备注元素
+              w.classList.remove("cfm-native-chat-pinned");
               w.querySelectorAll(
-                ".cfm-native-chat-note-line, .cfm-native-chat-note-edit-btn",
+                ".cfm-native-chat-note-line, .cfm-native-chat-note-edit-btn, .cfm-native-chat-pin-btn",
               ).forEach((el) => el.remove());
             });
           enhanceNativeChatPopup();
@@ -24634,7 +25054,12 @@ jQuery(async () => {
     const ctx = getContext();
     let successCount = 0;
     let failCount = 0;
-    cfmToastr.info(`正在导入 ${files.length} 个聊天记录...`);
+    const failedFiles = [];
+    let processed = 0;
+    const batchProgress = showBatchProgressOverlay(
+      "正在导入聊天记录",
+      files.length,
+    );
     for (const file of files) {
       try {
         const formData = new FormData();
@@ -24654,6 +25079,7 @@ jQuery(async () => {
             successCount++;
           } else {
             failCount++;
+            failedFiles.push(file.name);
           }
         } else {
           // 回退：直接调用 API
@@ -24668,23 +25094,32 @@ jQuery(async () => {
               successCount++;
             } else {
               failCount++;
+              failedFiles.push(file.name);
             }
           } else {
             failCount++;
+            failedFiles.push(file.name);
           }
         }
       } catch (e) {
         console.error("[CFM] 导入聊天记录失败:", e);
         failCount++;
+        failedFiles.push(file.name);
       }
+      processed++;
+      batchProgress.update(processed);
     }
     await invalidateChatCache(avatar);
+    const importMsg = `成功导入 ${successCount} 个聊天记录${failCount > 0 ? `，${failCount} 个失败` : ""}`;
     if (successCount > 0) {
-      cfmToastr.success(
-        `成功导入 ${successCount} 个聊天记录${failCount > 0 ? `，${failCount} 个失败` : ""}`,
-      );
+      batchProgress.done(importMsg);
+      cfmToastr.success(importMsg);
     } else {
+      batchProgress.remove();
       cfmToastr.error(`导入失败`);
+    }
+    if (failedFiles.length > 0) {
+      showImportFailureDialog(failedFiles, "聊天记录");
     }
     rerenderCurrentView();
   }
@@ -25057,7 +25492,12 @@ jQuery(async () => {
             }
             const zip = new JSZip();
             let success = 0;
+            let processed = 0;
             const ctx = getContext();
+            const batchProgress = showBatchProgressOverlay(
+              "正在批量导出聊天记录",
+              toExport.length,
+            );
             for (const key of toExport) {
               const fn = key.split("::")[1];
               try {
@@ -25081,11 +25521,15 @@ jQuery(async () => {
               } catch (err) {
                 console.warn("[CFM] 导出聊天记录失败:", fn, err);
               }
+              processed++;
+              batchProgress.update(processed);
             }
             if (success === 0) {
+              batchProgress.remove();
               cfmToastr.error("没有成功导出任何聊天记录");
               return;
             }
+            batchProgress.update(processed, "正在打包ZIP...");
             const content = await zip.generateAsync({ type: "blob" });
             const a = document.createElement("a");
             a.href = URL.createObjectURL(content);
@@ -25094,7 +25538,9 @@ jQuery(async () => {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(a.href);
-            cfmToastr.success(`已导出 ${success} 条聊天记录到 聊天记录.zip`);
+            const exportMsg = `已导出 ${success} 条聊天记录到 聊天记录.zip`;
+            batchProgress.done(exportMsg);
+            cfmToastr.success(exportMsg);
           } catch (err) {
             console.error("[CFM] 批量导出聊天记录失败:", err);
             cfmToastr.error(`批量导出失败: ${err.message}`);
@@ -25117,11 +25563,20 @@ jQuery(async () => {
         )
           return;
         let successCount = 0;
+        let processed = 0;
+        const batchProgress = showBatchProgressOverlay(
+          "正在批量删除聊天记录",
+          toDelete.length,
+        );
         for (const key of toDelete) {
           const fn = key.split("::")[1];
           if (await deleteChatFile(avatar, fn)) successCount++;
+          processed++;
+          batchProgress.update(processed);
         }
-        cfmToastr.success(`已删除 ${successCount} 条聊天记录`);
+        const delMsg = `已删除 ${successCount} 条聊天记录`;
+        batchProgress.done(delMsg);
+        cfmToastr.success(delMsg);
         rerenderCurrentView();
       });
       subList.append(batchToolbar);
@@ -25363,12 +25818,18 @@ jQuery(async () => {
     const headers = getContext().getRequestHeaders();
     let success = 0;
     let fail = 0;
-    cfmToastr.info(`正在更新 ${avatars.length} 个角色卡...`);
+    const batchProgress = showBatchProgressOverlay(
+      "正在更新角色卡",
+      avatars.length,
+    );
+    let processed = 0;
 
     for (const avatar of avatars) {
       const char = characters.find((c) => c.avatar === avatar);
       if (!char) {
         fail++;
+        processed++;
+        batchProgress.update(processed);
         continue;
       }
       const data = {
@@ -25407,11 +25868,13 @@ jQuery(async () => {
         console.warn(`[CFM] 编辑角色卡 ${avatar} 失败`, e);
         fail++;
       }
+      processed++;
+      batchProgress.update(processed);
     }
+    const resultMsg = `已更新 ${success} 个角色卡${fail > 0 ? `，${fail} 个失败` : ""}`;
+    batchProgress.done(resultMsg);
     if (success > 0) {
-      cfmToastr.success(
-        `已更新 ${success} 个角色卡${fail > 0 ? `，${fail} 个失败` : ""}`,
-      );
+      cfmToastr.success(resultMsg);
     } else {
       cfmToastr.error("更新失败");
     }
@@ -26147,14 +26610,23 @@ jQuery(async () => {
                     </div>
                 </div>
                 <div class="cfm-resource-tabs">
-                    ${menuTabs.length ? `<div class="cfm-tab-menu-wrap"><button type="button" class="cfm-tab cfm-tab-menu-btn ${activeMenuTab ? "cfm-tab-active" : ""}" aria-expanded="false" title="更多标签页"><i class="fa-solid fa-ellipsis"></i></button><div class="cfm-tab-menu-dropdown">${menuTabs
-                      .map((tabId) => {
-                        const meta = CFM_TAB_META.find((m) => m.id === tabId);
-                        if (!meta) return "";
-                        const isActive = tabId === initialTab ? "cfm-tab-menu-item-active" : "";
-                        return `<button type="button" class="cfm-tab-menu-item ${isActive}" data-tab="${tabId}"><i class="fa-solid ${meta.icon}"></i><span>${meta.label}</span></button>`;
-                      })
-                      .join("")}</div></div>` : ""}
+                    ${
+                      menuTabs.length
+                        ? `<div class="cfm-tab-menu-wrap"><button type="button" class="cfm-tab cfm-tab-menu-btn ${activeMenuTab ? "cfm-tab-active" : ""}" aria-expanded="false" title="更多标签页"><i class="fa-solid fa-ellipsis"></i></button><div class="cfm-tab-menu-dropdown">${menuTabs
+                            .map((tabId) => {
+                              const meta = CFM_TAB_META.find(
+                                (m) => m.id === tabId,
+                              );
+                              if (!meta) return "";
+                              const isActive =
+                                tabId === initialTab
+                                  ? "cfm-tab-menu-item-active"
+                                  : "";
+                              return `<button type="button" class="cfm-tab-menu-item ${isActive}" data-tab="${tabId}"><i class="fa-solid ${meta.icon}"></i><span>${meta.label}</span></button>`;
+                            })
+                            .join("")}</div></div>`
+                        : ""
+                    }
                     ${visibleTabs
                       .map((tabId) => {
                         const meta = CFM_TAB_META.find((m) => m.id === tabId);
@@ -26601,7 +27073,21 @@ jQuery(async () => {
         let _fullscreenConfirmPending = false;
 
         const enterBottomFullscreen = () => {
+          const mode =
+            extension_settings[extensionName].mobileFullscreenMode ||
+            "to-search";
           $dualPane.addClass("cfm-bottom-fullscreen");
+          // 清除旧模式class，应用当前模式
+          $dualPane.removeClass(
+            "cfm-fs-to-search cfm-fs-to-tabs cfm-fs-true-full",
+          );
+          $dualPane.addClass("cfm-fs-" + mode);
+          // 在 popup 层面也添加模式class，用于控制 header/tabs/search 的显隐
+          const $popup = $("#cfm-popup");
+          $popup.removeClass(
+            "cfm-fs-to-search cfm-fs-to-tabs cfm-fs-true-full cfm-bottom-fullscreen-active",
+          );
+          $popup.addClass("cfm-bottom-fullscreen-active cfm-fs-" + mode);
           // 确保退出按钮存在
           const $rightHeader = $(rightPane).find(".cfm-right-header");
           if (!$rightHeader.find(".cfm-exit-fullscreen-btn").length) {
@@ -26618,7 +27104,13 @@ jQuery(async () => {
         };
 
         const exitBottomFullscreen = () => {
-          $dualPane.removeClass("cfm-bottom-fullscreen");
+          $dualPane.removeClass(
+            "cfm-bottom-fullscreen cfm-fs-to-search cfm-fs-to-tabs cfm-fs-true-full",
+          );
+          // 清除 popup 层面的全屏class
+          $("#cfm-popup").removeClass(
+            "cfm-bottom-fullscreen-active cfm-fs-to-search cfm-fs-to-tabs cfm-fs-true-full",
+          );
           // 恢复左侧面板默认高度
           leftPane.style.height = "";
           leftPane.style.maxHeight = "";
@@ -28144,9 +28636,14 @@ jQuery(async () => {
       const totalFiles = files.length;
       let successCount = 0;
       let failCount = 0;
+      const failedFiles = [];
       const importedAvatars = [];
 
-      cfmToastr.info(`正在导入 ${totalFiles} 个角色卡...`);
+      const batchProgress = showBatchProgressOverlay(
+        "正在导入角色卡",
+        totalFiles,
+      );
+      let processed = 0;
 
       for (const file of files) {
         const ext = file.name.match(/\.(\w+)$/);
@@ -28158,6 +28655,8 @@ jQuery(async () => {
         ) {
           cfmToastr.warning(`跳过不支持的文件: ${file.name}`);
           failCount++;
+          processed++;
+          batchProgress.update(processed);
           continue;
         }
 
@@ -28192,7 +28691,10 @@ jQuery(async () => {
         } catch (error) {
           console.error(`导入角色失败: ${file.name}`, error);
           failCount++;
+          failedFiles.push(file.name);
         }
+        processed++;
+        batchProgress.update(processed);
       }
 
       // 刷新角色列表
@@ -28251,12 +28753,18 @@ jQuery(async () => {
       const folderHint = targetFolder
         ? `到「${getTagName(targetFolder)}」`
         : "（未归类）";
+      const importMsg = `成功导入 ${successCount} 个角色卡${folderHint}${failCount > 0 ? `，${failCount} 个失败` : ""}`;
       if (successCount > 0) {
-        cfmToastr.success(
-          `成功导入 ${successCount} 个角色卡${folderHint}${failCount > 0 ? `，${failCount} 个失败` : ""}`,
-        );
+        batchProgress.done(importMsg);
+        cfmToastr.success(importMsg);
       } else if (failCount > 0) {
+        batchProgress.remove();
         cfmToastr.error(`导入失败，${failCount} 个文件无法导入`);
+      } else {
+        batchProgress.remove();
+      }
+      if (failedFiles.length > 0) {
+        showImportFailureDialog(failedFiles, "角色卡");
       }
 
       e.target.value = null;
@@ -28335,6 +28843,13 @@ jQuery(async () => {
       let successCount = 0;
       let failCount = 0;
       let skipCount = 0;
+      const failedFiles = [];
+
+      const batchProgress = showBatchProgressOverlay(
+        "正在导入预设",
+        parsedFiles.length,
+      );
+      let processed = 0;
 
       for (const { file, data, name } of parsedFiles) {
         try {
@@ -28344,6 +28859,8 @@ jQuery(async () => {
           if (isDuplicate) {
             if (dupAction === "skip") {
               skipCount++;
+              processed++;
+              batchProgress.update(processed);
               continue;
             } else if (dupAction === "rename") {
               finalName = getUniqueImportName(name, existingPresets);
@@ -28362,7 +28879,10 @@ jQuery(async () => {
         } catch (error) {
           console.error(`导入预设失败: ${file.name}`, error);
           failCount++;
+          failedFiles.push(file.name);
         }
+        processed++;
+        batchProgress.update(processed);
       }
 
       // 刷新视图
@@ -28374,12 +28894,21 @@ jQuery(async () => {
         parts.push(`成功导入 ${successCount} 个预设${folderHint}`);
       if (skipCount > 0) parts.push(`${skipCount} 个因名称重复已跳过`);
       if (failCount > 0) parts.push(`${failCount} 个失败`);
+      const importPresetMsg = parts.join("，");
       if (successCount > 0) {
-        cfmToastr.success(parts.join("，"));
+        batchProgress.done(importPresetMsg);
+        cfmToastr.success(importPresetMsg);
       } else if (skipCount > 0 && failCount === 0) {
-        cfmToastr.info(parts.join("，"));
+        batchProgress.done(importPresetMsg);
+        cfmToastr.info(importPresetMsg);
       } else if (failCount > 0) {
-        cfmToastr.error(parts.join("，"));
+        batchProgress.done(importPresetMsg);
+        cfmToastr.error(importPresetMsg);
+      } else {
+        batchProgress.remove();
+      }
+      if (failedFiles.length > 0) {
+        showImportFailureDialog(failedFiles, "预设");
       }
 
       e.target.value = null;
@@ -28547,12 +29076,21 @@ jQuery(async () => {
       let successCount = 0;
       let failCount = 0;
       let skipCount = 0;
+      const failedFiles = [];
+
+      const batchProgress = showBatchProgressOverlay(
+        "正在导入快速回复集",
+        validFiles.length,
+      );
+      let processed = 0;
 
       for (const { file, json, setName } of validFiles) {
         const isDuplicate = existingNames.has(setName);
 
         if (isDuplicate && dupAction === "skip") {
           skipCount++;
+          processed++;
+          batchProgress.update(processed);
           continue;
         }
 
@@ -28668,7 +29206,10 @@ jQuery(async () => {
         } catch (error) {
           console.error(`导入快速回复集失败: ${file.name}`, error);
           failCount++;
+          failedFiles.push(file.name);
         }
+        processed++;
+        batchProgress.update(processed);
       }
 
       // 刷新视图
@@ -28680,12 +29221,21 @@ jQuery(async () => {
         parts.push(`成功导入 ${successCount} 个快速回复集${folderHint}`);
       if (skipCount > 0) parts.push(`${skipCount} 个因名称重复已跳过`);
       if (failCount > 0) parts.push(`${failCount} 个失败`);
+      const importQrMsg = parts.join("，");
       if (successCount > 0) {
-        cfmToastr.success(parts.join("，"));
+        batchProgress.done(importQrMsg);
+        cfmToastr.success(importQrMsg);
       } else if (skipCount > 0 && failCount === 0) {
-        cfmToastr.info(parts.join("，"));
+        batchProgress.done(importQrMsg);
+        cfmToastr.info(importQrMsg);
       } else if (failCount > 0) {
-        cfmToastr.error(parts.join("，"));
+        batchProgress.done(importQrMsg);
+        cfmToastr.error(importQrMsg);
+      } else {
+        batchProgress.remove();
+      }
+      if (failedFiles.length > 0) {
+        showImportFailureDialog(failedFiles, "快速回复集");
       }
 
       e.target.value = null;
@@ -28941,6 +29491,13 @@ jQuery(async () => {
       let successCount = 0;
       let failCount = 0;
       let skipCount = 0;
+      const failedFiles = [];
+
+      const batchProgress = showBatchProgressOverlay(
+        "正在导入主题",
+        parsedFiles.length,
+      );
+      let processed = 0;
 
       for (const { file, data, name } of parsedFiles) {
         try {
@@ -28950,6 +29507,8 @@ jQuery(async () => {
           if (isDuplicate) {
             if (dupAction === "skip") {
               skipCount++;
+              processed++;
+              batchProgress.update(processed);
               continue;
             } else if (dupAction === "rename") {
               finalName = getUniqueImportName(name, existingThemes);
@@ -28987,7 +29546,10 @@ jQuery(async () => {
         } catch (error) {
           console.error(`导入主题失败: ${file.name}`, error);
           failCount++;
+          failedFiles.push(file.name);
         }
+        processed++;
+        batchProgress.update(processed);
       }
 
       if (successCount > 0) {
@@ -29003,12 +29565,21 @@ jQuery(async () => {
         parts.push(`成功导入 ${successCount} 个主题${folderHint}`);
       if (skipCount > 0) parts.push(`${skipCount} 个因名称重复已跳过`);
       if (failCount > 0) parts.push(`${failCount} 个失败`);
+      const importThemeMsg = parts.join("，");
       if (successCount > 0) {
-        cfmToastr.success(parts.join("，"));
+        batchProgress.done(importThemeMsg);
+        cfmToastr.success(importThemeMsg);
       } else if (skipCount > 0 && failCount === 0) {
-        cfmToastr.info(parts.join("，"));
+        batchProgress.done(importThemeMsg);
+        cfmToastr.info(importThemeMsg);
       } else if (failCount > 0) {
-        cfmToastr.error(parts.join("，"));
+        batchProgress.done(importThemeMsg);
+        cfmToastr.error(importThemeMsg);
+      } else {
+        batchProgress.remove();
+      }
+      if (failedFiles.length > 0) {
+        showImportFailureDialog(failedFiles, "主题");
       }
 
       e.target.value = null;
@@ -29074,6 +29645,13 @@ jQuery(async () => {
       let successCount = 0;
       let failCount = 0;
       let skipCount = 0;
+      const failedFiles = [];
+
+      const batchProgress = showBatchProgressOverlay(
+        "正在导入背景",
+        imageFiles.length,
+      );
+      let processed = 0;
 
       for (const file of imageFiles) {
         try {
@@ -29083,6 +29661,8 @@ jQuery(async () => {
           if (isDuplicate) {
             if (dupAction === "skip") {
               skipCount++;
+              processed++;
+              batchProgress.update(processed);
               continue;
             } else if (dupAction === "rename") {
               const ext =
@@ -29121,7 +29701,10 @@ jQuery(async () => {
         } catch (error) {
           console.error(`导入背景失败: ${file.name}`, error);
           failCount++;
+          failedFiles.push(file.name);
         }
+        processed++;
+        batchProgress.update(processed);
       }
 
       // 刷新酒馆原生背景列表（等待 DOM 完全更新后再渲染分类视图）
@@ -29167,12 +29750,21 @@ jQuery(async () => {
         parts.push(`成功导入 ${successCount} 个背景${folderHint}`);
       if (skipCount > 0) parts.push(`${skipCount} 个因名称重复已跳过`);
       if (failCount > 0) parts.push(`${failCount} 个失败`);
+      const importBgMsg = parts.join("，");
       if (successCount > 0) {
-        cfmToastr.success(parts.join("，"));
+        batchProgress.done(importBgMsg);
+        cfmToastr.success(importBgMsg);
       } else if (skipCount > 0 && failCount === 0) {
-        cfmToastr.info(parts.join("，"));
+        batchProgress.done(importBgMsg);
+        cfmToastr.info(importBgMsg);
       } else if (failCount > 0) {
-        cfmToastr.error(parts.join("，"));
+        batchProgress.done(importBgMsg);
+        cfmToastr.error(importBgMsg);
+      } else {
+        batchProgress.remove();
+      }
+      if (failedFiles.length > 0) {
+        showImportFailureDialog(failedFiles, "背景");
       }
 
       e.target.value = null;
@@ -29250,12 +29842,21 @@ jQuery(async () => {
       let successCount = 0;
       let failCount = 0;
       let skipCount = 0;
+      const failedFiles = [];
+
+      const batchProgress = showBatchProgressOverlay(
+        "正在导入世界书",
+        validFiles.length,
+      );
+      let processed = 0;
 
       for (const { file, worldName } of validFiles) {
         const isDuplicate = existingWI.has(worldName);
 
         if (isDuplicate && dupAction === "skip") {
           skipCount++;
+          processed++;
+          batchProgress.update(processed);
           continue;
         }
 
@@ -29323,7 +29924,10 @@ jQuery(async () => {
         } catch (error) {
           console.error(`导入世界书失败: ${file.name}`, error);
           failCount++;
+          failedFiles.push(file.name);
         }
+        processed++;
+        batchProgress.update(processed);
       }
 
       if (targetFolder && successCount > 0) {
@@ -29360,12 +29964,21 @@ jQuery(async () => {
         parts.push(`成功导入 ${successCount} 个世界书${folderHint}`);
       if (skipCount > 0) parts.push(`${skipCount} 个因名称重复已跳过`);
       if (failCount > 0) parts.push(`${failCount} 个失败`);
+      const importWiMsg = parts.join("，");
       if (successCount > 0) {
-        cfmToastr.success(parts.join("，"));
+        batchProgress.done(importWiMsg);
+        cfmToastr.success(importWiMsg);
       } else if (skipCount > 0 && failCount === 0) {
-        cfmToastr.info(parts.join("，"));
+        batchProgress.done(importWiMsg);
+        cfmToastr.info(importWiMsg);
       } else if (failCount > 0) {
-        cfmToastr.error(parts.join("，"));
+        batchProgress.done(importWiMsg);
+        cfmToastr.error(importWiMsg);
+      } else {
+        batchProgress.remove();
+      }
+      if (failedFiles.length > 0) {
+        showImportFailureDialog(failedFiles, "世界书");
       }
 
       e.target.value = null;
@@ -32291,15 +32904,21 @@ jQuery(async () => {
       }
       const tabsContainer = $("#cfm-overlay .cfm-resource-tabs");
       if (tabsContainer.length > 0) {
-        const newTabsHtml = `${menuTabs.length ? `<div class="cfm-tab-menu-wrap"><button type="button" class="cfm-tab cfm-tab-menu-btn ${menuTabs.includes(currentResourceType) ? "cfm-tab-active" : ""}" aria-expanded="false" title="更多标签页"><i class="fa-solid fa-ellipsis"></i></button><div class="cfm-tab-menu-dropdown">${menuTabs
-          .map((tabId) => {
-            const meta = CFM_TAB_META.find((m) => m.id === tabId);
-            if (!meta) return "";
-            const isActive =
-              tabId === currentResourceType ? "cfm-tab-menu-item-active" : "";
-            return `<button type="button" class="cfm-tab-menu-item ${isActive}" data-tab="${tabId}"><i class="fa-solid ${meta.icon}"></i><span>${meta.label}</span></button>`;
-          })
-          .join("")}</div></div>` : ""}${visibleTabs
+        const newTabsHtml = `${
+          menuTabs.length
+            ? `<div class="cfm-tab-menu-wrap"><button type="button" class="cfm-tab cfm-tab-menu-btn ${menuTabs.includes(currentResourceType) ? "cfm-tab-active" : ""}" aria-expanded="false" title="更多标签页"><i class="fa-solid fa-ellipsis"></i></button><div class="cfm-tab-menu-dropdown">${menuTabs
+                .map((tabId) => {
+                  const meta = CFM_TAB_META.find((m) => m.id === tabId);
+                  if (!meta) return "";
+                  const isActive =
+                    tabId === currentResourceType
+                      ? "cfm-tab-menu-item-active"
+                      : "";
+                  return `<button type="button" class="cfm-tab-menu-item ${isActive}" data-tab="${tabId}"><i class="fa-solid ${meta.icon}"></i><span>${meta.label}</span></button>`;
+                })
+                .join("")}</div></div>`
+            : ""
+        }${visibleTabs
           .map((tabId) => {
             const meta = CFM_TAB_META.find((m) => m.id === tabId);
             if (!meta) return "";
@@ -32355,7 +32974,9 @@ jQuery(async () => {
           if (cfmPresetRenameMode) exitPresetRenameMode();
           if (cfmWorldInfoRenameMode) exitWorldInfoRenameMode();
           if (cfmQrRenameMode) exitQrRenameMode();
-          $("#cfm-overlay").find("#cfm-chars-view").toggle(tab === "chars");
+          $("#cfm-overlay")
+            .find("#cfm-chars-view")
+            .toggle(tab === "chars");
           $("#cfm-overlay")
             .find("#cfm-presets-view")
             .toggle(tab === "presets");
@@ -32371,7 +32992,9 @@ jQuery(async () => {
           $("#cfm-overlay")
             .find("#cfm-personas-view")
             .toggle(tab === "personas");
-          $("#cfm-overlay").find("#cfm-regex-view").toggle(tab === "regex");
+          $("#cfm-overlay")
+            .find("#cfm-regex-view")
+            .toggle(tab === "regex");
           $("#cfm-overlay")
             .find("#cfm-qr-view")
             .toggle(tab === "quickreply");
@@ -32420,27 +33043,35 @@ jQuery(async () => {
           else if (tab === "regex") renderRegexView();
           else if (tab === "quickreply") renderQRView();
         };
-        tabsContainer.find(".cfm-tab[data-tab]").on("click touchend", function (e) {
-          e.preventDefault();
-          syncTabSwitch($(this).data("tab"), $(this));
-        });
-        tabsContainer.find(".cfm-tab-menu-btn").on("click touchend", function (e) {
-          e.preventDefault();
-          e.stopPropagation();
-          const wrap = $(this).closest(".cfm-tab-menu-wrap");
-          const willOpen = !wrap.hasClass("cfm-tab-menu-open");
-          $("#cfm-overlay .cfm-tab-menu-wrap").removeClass("cfm-tab-menu-open");
-          $("#cfm-overlay .cfm-tab-menu-btn").attr("aria-expanded", "false");
-          if (willOpen) {
-            wrap.addClass("cfm-tab-menu-open");
-            $(this).attr("aria-expanded", "true");
-          }
-        });
-        tabsContainer.find(".cfm-tab-menu-item").on("click touchend", function (e) {
-          e.preventDefault();
-          e.stopPropagation();
-          syncTabSwitch($(this).data("tab"), $(this));
-        });
+        tabsContainer
+          .find(".cfm-tab[data-tab]")
+          .on("click touchend", function (e) {
+            e.preventDefault();
+            syncTabSwitch($(this).data("tab"), $(this));
+          });
+        tabsContainer
+          .find(".cfm-tab-menu-btn")
+          .on("click touchend", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const wrap = $(this).closest(".cfm-tab-menu-wrap");
+            const willOpen = !wrap.hasClass("cfm-tab-menu-open");
+            $("#cfm-overlay .cfm-tab-menu-wrap").removeClass(
+              "cfm-tab-menu-open",
+            );
+            $("#cfm-overlay .cfm-tab-menu-btn").attr("aria-expanded", "false");
+            if (willOpen) {
+              wrap.addClass("cfm-tab-menu-open");
+              $(this).attr("aria-expanded", "true");
+            }
+          });
+        tabsContainer
+          .find(".cfm-tab-menu-item")
+          .on("click touchend", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            syncTabSwitch($(this).data("tab"), $(this));
+          });
       }
       // --- 刷新视图和工具栏 ---
       // 确保正确的视图显示
@@ -32899,6 +33530,50 @@ jQuery(async () => {
     body.append(section);
   }
 
+  // ==================== 共享：移动端全屏模式设置 ====================
+  function renderMobileFullscreenSection(body) {
+    const currentMode =
+      extension_settings[extensionName].mobileFullscreenMode || "to-search";
+    const section = $(`
+      <div class="cfm-config-section">
+        <div style="font-weight:600;margin-bottom:6px;">移动端下栏全屏模式</div>
+        <div class="cfm-icon-config-hint" style="margin-bottom:8px;">拖动下栏至顶部触发全屏时，下栏显示的范围。仅影响移动端。</div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="radio" name="cfm-mobile-fs-mode" value="to-search" ${currentMode === "to-search" ? "checked" : ""}>
+            <span>全屏至搜索栏</span>
+          </label>
+          <div class="cfm-icon-config-hint" style="margin-left:24px;margin-top:-2px;">隐藏文件夹面板，保留标题栏、标签页和搜索栏（默认）</div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="radio" name="cfm-mobile-fs-mode" value="to-tabs" ${currentMode === "to-tabs" ? "checked" : ""}>
+            <span>全屏至标签页</span>
+          </label>
+          <div class="cfm-icon-config-hint" style="margin-left:24px;margin-top:-2px;">隐藏文件夹面板和搜索栏，保留标题栏和标签页</div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="radio" name="cfm-mobile-fs-mode" value="true-full" ${currentMode === "true-full" ? "checked" : ""}>
+            <span>真全屏</span>
+          </label>
+          <div class="cfm-icon-config-hint" style="margin-left:24px;margin-top:-2px;">下栏完全覆盖整个弹窗，包括标签页和标题栏</div>
+        </div>
+      </div>
+    `);
+    section.find("input[name='cfm-mobile-fs-mode']").on("change", function () {
+      const val = $(this).val();
+      extension_settings[extensionName].mobileFullscreenMode = val;
+      getContext().saveSettingsDebounced();
+      const labels = {
+        "to-search": "全屏至搜索栏",
+        "to-tabs": "全屏至标签页",
+        "true-full": "真全屏",
+      };
+      cfmToastr.success(
+        "已切换为：" + (labels[val] || val) + "（下次进入全屏时生效）",
+      );
+    });
+
+    body.append(section);
+  }
+
   // ==================== 共享：界面语言切换（简体/繁体中文） ====================
   function renderLanguageSwitchSection(body) {
     const current = extension_settings[extensionName].language || "zh-CN";
@@ -32944,7 +33619,8 @@ jQuery(async () => {
         const meta = CFM_TAB_META.find((m) => m.id === t.id);
         if (!meta) return "";
         const checked = t.visible !== false ? "checked" : "";
-        const menuChecked = t.menu === true ? "cfm-layout-menu-check-checked" : "";
+        const menuChecked =
+          t.menu === true ? "cfm-layout-menu-check-checked" : "";
         return `<div class="cfm-layout-item" data-id="${t.id}">
           <button type="button" class="cfm-layout-menu-check ${menuChecked} ${tabMenuCfg.enabled ? "" : "cfm-layout-menu-check-hidden"}" data-tab-menu-toggle="${t.id}" title="收纳到标签页菜单" aria-pressed="${t.menu === true ? "true" : "false"}">
             <i class="fa-solid fa-check"></i>
@@ -33016,7 +33692,9 @@ jQuery(async () => {
       });
       layout.tabs = newOrder;
       layout.tabMenu = layout.tabMenu || { enabled: false };
-      layout.tabMenu.enabled = !!section.find("#cfm-layout-tab-menu-enabled").prop("checked");
+      layout.tabMenu.enabled = !!section
+        .find("#cfm-layout-tab-menu-enabled")
+        .prop("checked");
       getContext().saveSettingsDebounced();
       updateArrowStyles();
     }
@@ -33118,20 +33796,25 @@ jQuery(async () => {
       const menuCfg = getToolbarMenuConfig(tabId);
       const actionsList = section.find(".cfm-layout-actions-list");
       actionsList.empty();
-      section.find("#cfm-layout-menu-enabled").prop("checked", !!menuCfg.enabled);
+      section
+        .find("#cfm-layout-menu-enabled")
+        .prop("checked", !!menuCfg.enabled);
       section
         .find(".cfm-layout-menu-switch")
         .toggleClass("cfm-layout-menu-switch-enabled", !!menuCfg.enabled);
       const actions = getOrderedActions(tabId);
       if (!actions.length) {
-        actionsList.html('<div class="cfm-layout-empty">该标签页无子功能</div>');
+        actionsList.html(
+          '<div class="cfm-layout-empty">该标签页无子功能</div>',
+        );
         return;
       }
       actions.forEach((a) => {
         const meta = CFM_ACTION_META[a.id];
         if (!meta) return;
         const visibleChecked = a.visible !== false ? "checked" : "";
-        const menuChecked = a.menu === true ? "cfm-layout-menu-check-checked" : "";
+        const menuChecked =
+          a.menu === true ? "cfm-layout-menu-check-checked" : "";
         actionsList.append(`<div class="cfm-layout-item cfm-layout-action-item" data-id="${a.id}">
           <button type="button" class="cfm-layout-menu-check ${menuChecked} ${menuCfg.enabled ? "" : "cfm-layout-menu-check-hidden"}" data-action-menu-toggle="${a.id}" title="收纳到按钮菜单" aria-pressed="${a.menu === true ? "true" : "false"}">
             <i class="fa-solid fa-check"></i>
@@ -33145,64 +33828,92 @@ jQuery(async () => {
         </div>`);
       });
       updateActionArrowStyles();
-      section.find(".cfm-layout-tabs-list .cfm-layout-item").removeClass("cfm-layout-item-highlight");
-      section.find(`.cfm-layout-tabs-list .cfm-layout-item[data-id="${tabId}"]`).addClass("cfm-layout-item-highlight");
+      section
+        .find(".cfm-layout-tabs-list .cfm-layout-item")
+        .removeClass("cfm-layout-item-highlight");
+      section
+        .find(`.cfm-layout-tabs-list .cfm-layout-item[data-id="${tabId}"]`)
+        .addClass("cfm-layout-item-highlight");
     }
 
     function updateActionArrowStyles() {
       const items = section.find(".cfm-layout-actions-list .cfm-layout-item");
       items.find(".cfm-layout-arrow").removeClass("cfm-layout-arrow-disabled");
-      items.first().find(".cfm-layout-arrow-up").addClass("cfm-layout-arrow-disabled");
-      items.last().find(".cfm-layout-arrow-down").addClass("cfm-layout-arrow-disabled");
+      items
+        .first()
+        .find(".cfm-layout-arrow-up")
+        .addClass("cfm-layout-arrow-disabled");
+      items
+        .last()
+        .find(".cfm-layout-arrow-down")
+        .addClass("cfm-layout-arrow-disabled");
     }
 
     function saveActionOrder() {
       const newOrder = [];
-      section.find(".cfm-layout-actions-list .cfm-layout-item").each(function () {
-        const id = $(this).data("id");
-        const visible = $(this).find("input[data-action-visible]").prop("checked");
-        const menu = $(this).find(".cfm-layout-menu-check").hasClass("cfm-layout-menu-check-checked");
-        newOrder.push({ id, visible, menu });
-      });
+      section
+        .find(".cfm-layout-actions-list .cfm-layout-item")
+        .each(function () {
+          const id = $(this).data("id");
+          const visible = $(this)
+            .find("input[data-action-visible]")
+            .prop("checked");
+          const menu = $(this)
+            .find(".cfm-layout-menu-check")
+            .hasClass("cfm-layout-menu-check-checked");
+          newOrder.push({ id, visible, menu });
+        });
       layout.tabActions[selectedLayoutTab] = newOrder;
       layout.tabMenus = layout.tabMenus || {};
-      layout.tabMenus[selectedLayoutTab] = layout.tabMenus[selectedLayoutTab] || { enabled: false };
-      layout.tabMenus[selectedLayoutTab].enabled = !!section.find("#cfm-layout-menu-enabled").prop("checked");
+      layout.tabMenus[selectedLayoutTab] = layout.tabMenus[
+        selectedLayoutTab
+      ] || { enabled: false };
+      layout.tabMenus[selectedLayoutTab].enabled = !!section
+        .find("#cfm-layout-menu-enabled")
+        .prop("checked");
       getContext().saveSettingsDebounced();
       updateActionArrowStyles();
     }
 
-    section.find(".cfm-layout-actions-list").on("change", "input[data-action-visible]", function () {
-      saveActionOrder();
-      applyAllToolbarVisibility();
-    });
-    section.find(".cfm-layout-actions-list").on("click touchend", ".cfm-layout-menu-check", function (e) {
-      if (e.type === "touchend") {
-        cfmLayoutMenuTouchStamp = Date.now();
-        e.preventDefault();
-      } else if (Date.now() - cfmLayoutMenuTouchStamp < 450) {
-        e.preventDefault();
+    section
+      .find(".cfm-layout-actions-list")
+      .on("change", "input[data-action-visible]", function () {
+        saveActionOrder();
+        applyAllToolbarVisibility();
+      });
+    section
+      .find(".cfm-layout-actions-list")
+      .on("click touchend", ".cfm-layout-menu-check", function (e) {
+        if (e.type === "touchend") {
+          cfmLayoutMenuTouchStamp = Date.now();
+          e.preventDefault();
+        } else if (Date.now() - cfmLayoutMenuTouchStamp < 450) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
         e.stopPropagation();
-        return;
-      }
-      e.stopPropagation();
-      if ($(this).hasClass("cfm-layout-menu-check-hidden")) return;
-      $(this).toggleClass("cfm-layout-menu-check-checked");
-      $(this).attr(
-        "aria-pressed",
-        $(this).hasClass("cfm-layout-menu-check-checked") ? "true" : "false",
-      );
-      saveActionOrder();
-      applyAllToolbarVisibility();
-    });
+        if ($(this).hasClass("cfm-layout-menu-check-hidden")) return;
+        $(this).toggleClass("cfm-layout-menu-check-checked");
+        $(this).attr(
+          "aria-pressed",
+          $(this).hasClass("cfm-layout-menu-check-checked") ? "true" : "false",
+        );
+        saveActionOrder();
+        applyAllToolbarVisibility();
+      });
     section.find("#cfm-layout-menu-enabled").on("change", function () {
       layout.tabMenus = layout.tabMenus || {};
-      layout.tabMenus[selectedLayoutTab] = layout.tabMenus[selectedLayoutTab] || { enabled: false };
+      layout.tabMenus[selectedLayoutTab] = layout.tabMenus[
+        selectedLayoutTab
+      ] || { enabled: false };
       layout.tabMenus[selectedLayoutTab].enabled = !!$(this).prop("checked");
       getContext().saveSettingsDebounced();
       renderActionsPanel(selectedLayoutTab);
       applyAllToolbarVisibility();
-      cfmToastr.success($(this).prop("checked") ? "已开启按钮收纳" : "已关闭按钮收纳");
+      cfmToastr.success(
+        $(this).prop("checked") ? "已开启按钮收纳" : "已关闭按钮收纳",
+      );
     });
 
     // 子功能箭头移动
@@ -33263,7 +33974,11 @@ jQuery(async () => {
     // 恢复默认按钮
     section.find(".cfm-layout-reset-btn").on("click touchend", function (e) {
       e.preventDefault();
-      if (!cfmConfirm("确定要恢复默认布局吗？当前的标签页顺序和子功能开关设置将被重置。"))
+      if (
+        !cfmConfirm(
+          "确定要恢复默认布局吗？当前的标签页顺序和子功能开关设置将被重置。",
+        )
+      )
         return;
       const defaultLayout = {
         tabs: [
@@ -33488,7 +34203,9 @@ jQuery(async () => {
     renderEntryTransferPostActionSection(settingsBody);
     // 0.65 移动端顶部栏避让开关
     renderMobileTopbarAvoidSection(settingsBody);
-    // 0.66 界面语言切换
+    // 0.66 移动端下栏全屏模式设置
+    renderMobileFullscreenSection(settingsBody);
+    // 0.67 界面语言切换
     renderLanguageSwitchSection(settingsBody);
     // 0.7 自定义布局（共享函数）
     renderCustomLayoutSection(layoutBody);
@@ -33529,7 +34246,8 @@ jQuery(async () => {
       if (imported > 0) renderConfigBody();
     });
     addSection.find("#cfm-auto-import-tags").on("change", function () {
-      extension_settings[extensionName].autoImportTags = !!$(this).prop("checked");
+      extension_settings[extensionName].autoImportTags =
+        !!$(this).prop("checked");
       getContext().saveSettingsDebounced();
       cfmToastr.success(
         extension_settings[extensionName].autoImportTags
@@ -33811,7 +34529,9 @@ jQuery(async () => {
                 ? qrConfigExpandedNodes
                 : worldInfoConfigExpandedNodes;
 
-    const tabShell = createConfigTabShell(defaultTab || cfmConfigTopActiveTab || "settings");
+    const tabShell = createConfigTabShell(
+      defaultTab || cfmConfigTopActiveTab || "settings",
+    );
     const settingsBody = tabShell.settingsPanel;
     const layoutBody = tabShell.layoutPanel;
     const createBody = tabShell.createPanel;
@@ -33857,7 +34577,9 @@ jQuery(async () => {
     renderEntryTransferPostActionSection(settingsBody);
     // 0.65 移动端顶部栏避让开关
     renderMobileTopbarAvoidSection(settingsBody);
-    // 0.66 界面语言切换
+    // 0.66 移动端下栏全屏模式设置
+    renderMobileFullscreenSection(settingsBody);
+    // 0.67 界面语言切换
     renderLanguageSwitchSection(settingsBody);
     // 0.7 自定义布局（共享函数）
     renderCustomLayoutSection(layoutBody);
@@ -34301,7 +35023,9 @@ jQuery(async () => {
       return r;
     }
 
-    const tabShell = createConfigTabShell(defaultTab || cfmConfigTopActiveTab || "settings");
+    const tabShell = createConfigTabShell(
+      defaultTab || cfmConfigTopActiveTab || "settings",
+    );
     const settingsBody = tabShell.settingsPanel;
     const layoutBody = tabShell.layoutPanel;
     const createBody = tabShell.createPanel;
@@ -41178,6 +41902,67 @@ jQuery(async () => {
     }
   }
 
+  /**
+   * 整体刷新世界书分组追踪状态和UI按钮（不依赖具体 bookName）。
+   * 当酒馆原生界面修改世界书激活状态时，用此函数同步分组面板。
+   */
+  function refreshAllWiPresetTrackingState() {
+    const presets = getWiActivePresets();
+    const activeSet = getActiveWorldInfoSet();
+    const applied =
+      extension_settings[extensionName]._wiAppliedPresetIndices || [];
+
+    // 保留仍然完全激活的分组
+    const nextApplied = applied.filter((idx) => {
+      const preset = presets[idx];
+      return preset && preset.books.every((b) => activeSet.has(b));
+    });
+
+    // 检查是否有非全局、有绑定的分组现在变为完全激活
+    presets.forEach((preset, idx) => {
+      if (!preset || nextApplied.includes(idx)) return;
+      const hasBindings =
+        (preset.bindChars && preset.bindChars.length > 0) ||
+        (preset.bindPresets && preset.bindPresets.length > 0) ||
+        (preset.bindChats && preset.bindChats.length > 0);
+      if (
+        preset.scope !== "global" &&
+        hasBindings &&
+        preset.books.every((b) => activeSet.has(b))
+      ) {
+        nextApplied.push(idx);
+      }
+    });
+
+    const changed =
+      nextApplied.length !== applied.length ||
+      nextApplied.some((idx, i) => idx !== applied[i]);
+
+    if (changed) {
+      extension_settings[extensionName]._wiAppliedPresetIndices = nextApplied;
+      getContext().saveSettingsDebounced();
+    }
+
+    const overlay = $("#cfm-wi-preset-panel-overlay");
+    if (overlay.length) {
+      overlay.find(".cfm-wi-preset-item").each(function () {
+        const idx = parseInt($(this).attr("data-preset-idx"), 10);
+        const preset = presets[idx];
+        if (!preset) return;
+        const fullyApplied = preset.books.every((b) => activeSet.has(b));
+        const btn = $(this).find(".cfm-wi-preset-apply");
+        btn.toggleClass("cfm-wi-preset-apply-active", fullyApplied);
+        btn.attr("title", fullyApplied ? "当前已激活" : "应用到全局");
+        btn.attr(
+          "style",
+          fullyApplied
+            ? "color:#a6e3a1;text-shadow:0 0 8px rgba(166,227,161,.55);"
+            : "",
+        );
+      });
+    }
+  }
+
   function syncQrPresetTrackingForManualToggle(setName, isActive) {
     const presets = getQrActivePresets();
     const applied =
@@ -42111,13 +42896,14 @@ jQuery(async () => {
     overlay.find("#cfm-qr-preset-edit-folder-btn").on("click", function (e) {
       e.preventDefault();
       e.stopPropagation();
-      const currentCheckedInput = overlay.find(
-        ".cfm-wi-preset-edit-item input:checked",
-      ).first();
+      const currentCheckedInput = overlay
+        .find(".cfm-wi-preset-edit-item input:checked")
+        .first();
       const currentCheckedItem = currentCheckedInput.closest(
         ".cfm-wi-preset-edit-item",
       );
-      const currentCheckedFolderRaw = currentCheckedItem.attr("data-folder") || "";
+      const currentCheckedFolderRaw =
+        currentCheckedItem.attr("data-folder") || "";
       const currentCheckedFolder =
         currentCheckedFolderRaw && qrTree[currentCheckedFolderRaw]
           ? currentCheckedFolderRaw
@@ -45758,6 +46544,13 @@ jQuery(async () => {
     }
     let importedCount = 0;
     const warnings = [];
+
+    const batchProgress = showBatchProgressOverlay(
+      "正在导入正则脚本",
+      files.length,
+    );
+    let processed = 0;
+
     for (const file of files) {
       let parsed;
       try {
@@ -45767,6 +46560,8 @@ jQuery(async () => {
         cfmToastr.warning(
           `无法解析文件 "${file.name}"，请选择有效的 JSON 文件`,
         );
+        processed++;
+        batchProgress.update(processed);
         continue;
       }
       const toImport = Array.isArray(parsed) ? parsed : [parsed];
@@ -45786,18 +46581,22 @@ jQuery(async () => {
         }
         importedCount++;
       }
+      processed++;
+      batchProgress.update(processed);
     }
     if (importedCount > 0) {
       getContext().saveSettingsDebounced();
+      let importRegexMsg;
       if (warnings.length > 0) {
-        cfmToastr.success(
-          `已导入 ${importedCount} 个正则脚本（有 ${warnings.length} 条警告）`,
-        );
+        importRegexMsg = `已导入 ${importedCount} 个正则脚本（有 ${warnings.length} 条警告）`;
         console.warn(`[CFM] 正则导入报告\n${warnings.join("\n")}`);
       } else {
-        cfmToastr.success(`已导入 ${importedCount} 个正则脚本`);
+        importRegexMsg = `已导入 ${importedCount} 个正则脚本`;
       }
+      batchProgress.done(importRegexMsg);
+      cfmToastr.success(importRegexMsg);
     } else {
+      batchProgress.done("没有成功导入任何正则脚本");
       cfmToastr.warning("没有成功导入任何正则脚本");
     }
     renderRegexView();
@@ -48534,13 +49333,14 @@ jQuery(async () => {
     overlay.find("#cfm-regex-preset-edit-folder-btn").on("click", function (e) {
       e.preventDefault();
       e.stopPropagation();
-      const currentCheckedInput = overlay.find(
-        ".cfm-wi-preset-edit-item input:checked",
-      ).first();
+      const currentCheckedInput = overlay
+        .find(".cfm-wi-preset-edit-item input:checked")
+        .first();
       const currentCheckedItem = currentCheckedInput.closest(
         ".cfm-wi-preset-edit-item",
       );
-      const currentCheckedFolderRaw = currentCheckedItem.attr("data-folder") || "";
+      const currentCheckedFolderRaw =
+        currentCheckedItem.attr("data-folder") || "";
       const currentCheckedFolder =
         currentCheckedFolderRaw && folderTree[currentCheckedFolderRaw]
           ? currentCheckedFolderRaw
@@ -51092,7 +51892,7 @@ jQuery(async () => {
             ? getDisplayName(effectiveCurrentSelectedFilter)
             : "当前选中");
     const effectiveCurrentSelectedCount = effectiveCurrentSelectedFilter
-      ? currentSelectedCount ?? getItemCount(effectiveCurrentSelectedFilter)
+      ? (currentSelectedCount ?? getItemCount(effectiveCurrentSelectedFilter))
       : null;
     const currentSelectedBtn = effectiveCurrentSelectedFilter
       ? $(`<div class="cfm-nf-item cfm-nf-current-selected${currentFilter === effectiveCurrentSelectedFilter ? " cfm-nf-active" : ""}" data-folder-id="${escapeHtml(effectiveCurrentSelectedFilter)}">
@@ -51119,15 +51919,21 @@ jQuery(async () => {
     $("body").append(panel);
 
     const anchorRect = anchorEl[0].getBoundingClientRect();
-    let top = anchorRect.bottom + 4;
     let left = anchorRect.left;
     const panelWidth = panel.outerWidth();
     const panelHeight = panel.outerHeight();
     if (left + panelWidth > window.innerWidth)
       left = window.innerWidth - panelWidth - 8;
     if (left < 4) left = 4;
-    if (top + panelHeight > window.innerHeight)
+    const spaceBelow = window.innerHeight - anchorRect.bottom - 4;
+    const spaceAbove = anchorRect.top - 4;
+    let top;
+    if (panelHeight <= spaceBelow || spaceBelow >= spaceAbove) {
+      top = anchorRect.bottom + 4;
+    } else {
       top = anchorRect.top - panelHeight - 4;
+    }
+    if (top < 4) top = 4;
     panel.css({ top: `${top}px`, left: `${left}px` });
 
     panel.on("click", ".cfm-nf-arrow", function (e) {
@@ -51252,7 +52058,6 @@ jQuery(async () => {
     // 定位面板
     $("body").append(panel);
     const anchorRect = anchorEl[0].getBoundingClientRect();
-    let top = anchorRect.bottom + 4;
     let left = anchorRect.left;
     // 确保不超出视口
     const panelWidth = panel.outerWidth();
@@ -51260,8 +52065,15 @@ jQuery(async () => {
     if (left + panelWidth > window.innerWidth)
       left = window.innerWidth - panelWidth - 8;
     if (left < 4) left = 4;
-    if (top + panelHeight > window.innerHeight)
+    const spaceBelow = window.innerHeight - anchorRect.bottom - 4;
+    const spaceAbove = anchorRect.top - 4;
+    let top;
+    if (panelHeight <= spaceBelow || spaceBelow >= spaceAbove) {
+      top = anchorRect.bottom + 4;
+    } else {
       top = anchorRect.top - panelHeight - 4;
+    }
+    if (top < 4) top = 4;
     panel.css({ top: top + "px", left: left + "px" });
 
     // 事件：展开/收起箭头
@@ -52391,15 +53203,21 @@ jQuery(async () => {
         $("body").append(panel);
       }
       const anchorRect = btn[0].getBoundingClientRect();
-      let top = anchorRect.bottom + 4;
       let left = anchorRect.left;
       const panelWidth = panel.outerWidth();
       const panelHeight = panel.outerHeight();
       if (left + panelWidth > window.innerWidth)
         left = window.innerWidth - panelWidth - 8;
       if (left < 4) left = 4;
-      if (top + panelHeight > window.innerHeight)
+      const spaceBelow = window.innerHeight - anchorRect.bottom - 4;
+      const spaceAbove = anchorRect.top - 4;
+      let top;
+      if (panelHeight <= spaceBelow || spaceBelow >= spaceAbove) {
+        top = anchorRect.bottom + 4;
+      } else {
         top = anchorRect.top - panelHeight - 4;
+      }
+      if (top < 4) top = 4;
       panel.css({ top: top + "px", left: left + "px" });
 
       // 展开/收起箭头
@@ -52696,6 +53514,16 @@ jQuery(async () => {
       });
     }
   }
+
+  // 监听酒馆原生 #world_info select 的 change 事件，同步世界书分组按钮状态
+  let _nativeWiChangeTimer = null;
+  $(document).on("change", "#world_info", () => {
+    if (_nativeWiChangeTimer) clearTimeout(_nativeWiChangeTimer);
+    _nativeWiChangeTimer = setTimeout(() => {
+      _nativeWiChangeTimer = null;
+      refreshAllWiPresetTrackingState();
+    }, 200);
+  });
 
   publishBackupBridgeSignal("ready", {
     displayName: "酒馆资源管理器",
