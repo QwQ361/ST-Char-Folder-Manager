@@ -22796,8 +22796,8 @@ jQuery(async () => {
     charRow.next(".cfm-regex-sublist").remove();
     const subList = $('<div class="cfm-regex-sublist"></div>');
 
-    // === 工具栏（仅对目标角色显示） ===
-    if (isTarget) {
+    // === 工具栏（角色正则均可编辑；新建仅当前角色可用） ===
+    {
       const regexToolbar = $(`
         <div class="cfm-regex-toolbar">
           <button class="cfm-btn cfm-btn-sm cfm-regex-import-btn" title="导入正则脚本"><i class="fa-solid fa-file-import"></i> 导入</button>
@@ -22842,6 +22842,12 @@ jQuery(async () => {
       regexToolbar.find(".cfm-regex-create-btn").on("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (!isTarget) {
+          cfmToastr.info(
+            "当前仅支持在已选中的角色中通过原生编辑器新建正则，请先切换角色，或使用导入/互通方式处理其它角色",
+          );
+          return;
+        }
         createCharScopedRegexFromManager(avatar, charName);
       });
       // 批量操作切换
@@ -23019,37 +23025,29 @@ jQuery(async () => {
         const script = scripts[i];
         const isDisabled = !!script.disabled;
         const isBatchSel =
-          isTarget && cfmRegexBatchMode && cfmRegexBatchSelected.has(script.id);
-        const toggleHtml = isTarget
-          ? `<div class="cfm-wi-toggle ${isDisabled ? "" : "cfm-wi-toggle-on"}" title="${isDisabled ? "已禁用 - 点击启用" : "已启用 - 点击禁用"}"><i class="fa-solid fa-toggle-${isDisabled ? "off" : "on"}"></i></div>`
-          : `<div class="cfm-wi-toggle cfm-toggle-readonly ${isDisabled ? "" : "cfm-wi-toggle-on"}" title="${isDisabled ? "已禁用" : "已启用"}（非当前角色，不可切换）"><i class="fa-solid fa-toggle-${isDisabled ? "off" : "on"}"></i></div>`;
+          cfmRegexBatchMode && cfmRegexBatchSelected.has(script.id);
+        const toggleHtml = `<div class="cfm-wi-toggle ${isDisabled ? "" : "cfm-wi-toggle-on"}" title="${isDisabled ? "已禁用 - 点击启用" : "已启用 - 点击禁用"}"><i class="fa-solid fa-toggle-${isDisabled ? "off" : "on"}"></i></div>`;
         const row = $(`
           <div class="cfm-row cfm-row-char cfm-regex-script-row ${isDisabled ? "cfm-regex-disabled" : ""} ${isBatchSel ? "cfm-regex-batch-selected" : ""}"
                data-script-id="${escapeHtml(script.id || "")}"
                data-script-idx="${i}"
                data-script-type="1"
                data-owner="${escapeHtml(charName || "")}">
-            ${isTarget && cfmRegexBatchMode ? `<div class="cfm-regex-batch-check"><i class="fa-${isBatchSel ? "solid" : "regular"} fa-square${isBatchSel ? "-check" : ""}"></i></div>` : ""}
+            ${cfmRegexBatchMode ? `<div class="cfm-regex-batch-check"><i class="fa-${isBatchSel ? "solid" : "regular"} fa-square${isBatchSel ? "-check" : ""}"></i></div>` : ""}
             ${toggleHtml}
             <div class="cfm-row-name">
               <span>${escapeHtml(script.scriptName || "(未命名)")}</span>
             </div>
             <div class="cfm-regex-row-actions">
               <div class="cfm-regex-action-btn cfm-regex-edit-btn" title="编辑"><i class="fa-solid fa-pen-to-square"></i></div>
-              ${
-                isTarget
-                  ? `
               <div class="cfm-regex-action-btn cfm-regex-move-up-btn${i === 0 ? " cfm-regex-move-disabled" : ""}" title="上移"><i class="fa-solid fa-arrow-up"></i></div>
               <div class="cfm-regex-action-btn cfm-regex-move-down-btn${i === scripts.length - 1 ? " cfm-regex-move-disabled" : ""}" title="下移"><i class="fa-solid fa-arrow-down"></i></div>
-              `
-                  : ""
-              }
             </div>
           </div>
         `);
 
-        // 批量模式：行点击切换选中（仅目标角色）
-        if (isTarget && cfmRegexBatchMode) {
+        // 批量模式：行点击切换选中
+        if (cfmRegexBatchMode) {
           row.on("click", (e) => {
             if (
               $(e.target).closest(
@@ -23067,9 +23065,9 @@ jQuery(async () => {
           });
         }
 
-        // toggle 点击（只有目标角色可操作，readonly的不绑定事件）
+        // toggle 点击
         row
-          .find(".cfm-wi-toggle:not(.cfm-toggle-readonly)")
+          .find(".cfm-wi-toggle")
           .on("click", async function (e) {
             e.preventDefault();
             e.stopPropagation();
@@ -23105,7 +23103,17 @@ jQuery(async () => {
           if (nativeEl.length) {
             nativeEl.find(".edit_existing_regex").trigger("click");
           } else {
-            cfmToastr.warning("非当前角色的正则脚本，无法编辑");
+            openNativeCharRegexScriptEditor(avatar, scriptId, scripts, charName).then(
+              (opened) => {
+                if (!opened) {
+                  cfmToastr.warning("未能打开该角色正则的编辑器，请稍后重试");
+                }
+              },
+              (err) => {
+                console.error("[CFM] 打开非当前角色正则编辑器失败:", err);
+                cfmToastr.error("打开编辑器失败: " + (err?.message || err));
+              },
+            );
           }
         });
         // 上移按钮
@@ -23153,9 +23161,8 @@ jQuery(async () => {
         subList.append(row);
       }
 
-      // 拖拽排序（仅目标角色）
+      // 拖拽排序
       if (
-        isTarget &&
         typeof subList.sortable === "function" &&
         !cfmIsTouchDevice()
       ) {
@@ -23587,6 +23594,141 @@ jQuery(async () => {
       return false;
     } finally {
       endSuppressPresetRegexToast();
+    }
+  }
+
+  /**
+   * 打开非当前角色的正则脚本编辑器
+   * 对当前角色直接触发原生编辑按钮；对非当前角色，加载原生编辑器模板自行弹出编辑窗口。
+   * @param {string} avatar - 角色的 avatar
+   * @param {string} scriptId - 正则脚本 ID
+   * @param {Array} scripts - 该角色的正则脚本列表（引用）
+   * @param {string} [charName] - 角色名称
+   * @returns {Promise<boolean>} 是否成功打开编辑器
+   */
+  async function openNativeCharRegexScriptEditor(avatar, scriptId, scripts, charName) {
+    const normalizedScriptId = String(scriptId || "").trim();
+    if (!avatar || !normalizedScriptId) return false;
+
+    // 当前角色 → 直接使用原生 DOM 上的编辑按钮
+    const nativeEl = $(`#saved_scoped_scripts > #${$.escapeSelector(normalizedScriptId)}`);
+    if (nativeEl.length) {
+      const editBtn = nativeEl.find(".edit_existing_regex").first();
+      const nativeBtn = editBtn.get(0);
+      if (nativeBtn instanceof HTMLElement) {
+        nativeBtn.click();
+        return true;
+      }
+    }
+
+    // 非当前角色 → 加载原生编辑器模板，自行弹出
+    try {
+      const engine = await import("../../regex/engine.js");
+      const { renderExtensionTemplateAsync } = await import("../../extensions.js");
+      const { callGenericPopup, POPUP_TYPE: PT } = await import("../../popup.js");
+
+      const scriptIdx = scripts.findIndex(s => String(s?.id || "") === normalizedScriptId);
+      if (scriptIdx === -1) {
+        cfmToastr.warning("未找到该正则脚本");
+        return false;
+      }
+      const script = scripts[scriptIdx];
+
+      const editorHtml = $(await renderExtensionTemplateAsync("regex", "editor"));
+
+      // 填入现有值
+      if (script.scriptName) {
+        editorHtml.find(".regex_script_name").val(script.scriptName);
+      }
+      editorHtml.find(".find_regex").val(script.findRegex || "");
+      editorHtml.find(".regex_replace_string").val(script.replaceString || "");
+      editorHtml.find(".regex_trim_strings").val(script.trimStrings?.join("\n") || "");
+      editorHtml.find('input[name="disabled"]').prop("checked", script.disabled ?? false);
+      editorHtml.find('input[name="only_format_display"]').prop("checked", script.markdownOnly ?? false);
+      editorHtml.find('input[name="only_format_prompt"]').prop("checked", script.promptOnly ?? false);
+      editorHtml.find('input[name="run_on_edit"]').prop("checked", script.runOnEdit ?? false);
+      editorHtml.find('select[name="substitute_regex"]').val(script.substituteRegex ?? 0);
+      editorHtml.find('input[name="min_depth"]').val(script.minDepth ?? "");
+      editorHtml.find('input[name="max_depth"]').val(script.maxDepth ?? "");
+
+      if (Array.isArray(script.placement)) {
+        script.placement.forEach((element) => {
+          editorHtml
+            .find(`input[name="replace_position"][value="${element}"]`)
+            .prop("checked", true);
+        });
+      }
+
+      // 测试模式切换
+      editorHtml.find("#regex_test_mode_toggle").on("click", function () {
+        editorHtml.find("#regex_test_mode").toggleClass("displayNone");
+        updateTestResult();
+      });
+
+      function updateTestResult() {
+        if (!editorHtml.find("#regex_test_mode").is(":visible")) return;
+        try {
+          const testScript = {
+            id: getContext().uuidv4(),
+            scriptName: String(editorHtml.find(".regex_script_name").val()),
+            findRegex: String(editorHtml.find(".find_regex").val()),
+            replaceString: String(editorHtml.find(".regex_replace_string").val()),
+            trimStrings: String(editorHtml.find(".regex_trim_strings").val()).split("\n").filter(e => e.length !== 0) || [],
+            substituteRegex: Number(editorHtml.find('select[name="substitute_regex"]').val()),
+            disabled: false,
+            promptOnly: false,
+            markdownOnly: false,
+            runOnEdit: false,
+            minDepth: null,
+            maxDepth: null,
+            placement: null,
+          };
+          const rawTestString = String(editorHtml.find("#regex_test_input").val());
+          const result = engine.runRegexScript(testScript, rawTestString);
+          editorHtml.find("#regex_test_output").text(result);
+        } catch (testErr) {
+          editorHtml.find("#regex_test_output").text("(测试执行出错)");
+        }
+      }
+
+      editorHtml.find("input, textarea, select").on("input", updateTestResult);
+
+      const popupResult = await callGenericPopup(editorHtml, PT.CONFIRM, "", {
+        okButton: "Save",
+        cancelButton: "Cancel",
+        allowVerticalScrolling: true,
+      });
+
+      if (popupResult) {
+        script.scriptName = String(editorHtml.find(".regex_script_name").val());
+        script.findRegex = String(editorHtml.find(".find_regex").val());
+        script.replaceString = String(editorHtml.find(".regex_replace_string").val());
+        script.trimStrings = String(editorHtml.find(".regex_trim_strings").val())
+          .split("\n")
+          .filter(e => e.length !== 0) || [];
+        script.placement = editorHtml
+          .find('input[name="replace_position"]')
+          .filter(":checked")
+          .map(function () { return parseInt($(this).val().toString()); })
+          .get()
+          .filter(e => !isNaN(e)) || [];
+        script.disabled = editorHtml.find('input[name="disabled"]').prop("checked");
+        script.markdownOnly = editorHtml.find('input[name="only_format_display"]').prop("checked");
+        script.promptOnly = editorHtml.find('input[name="only_format_prompt"]').prop("checked");
+        script.runOnEdit = editorHtml.find('input[name="run_on_edit"]').prop("checked");
+        script.substituteRegex = Number(editorHtml.find('select[name="substitute_regex"]').val());
+        script.minDepth = parseInt(String(editorHtml.find('input[name="min_depth"]').val()));
+        script.maxDepth = parseInt(String(editorHtml.find('input[name="max_depth"]').val()));
+
+        await saveCharRegexScripts(avatar, scripts);
+        rerenderCurrentView();
+        cfmToastr.success(`角色「${charName || avatar}」的正则脚本已更新`);
+      }
+      return true;
+    } catch (err) {
+      console.error("[CFM] 打开角色正则编辑器失败:", err);
+      cfmToastr.error("打开编辑器失败: " + (err?.message || err));
+      return false;
     }
   }
 
@@ -32588,14 +32730,12 @@ jQuery(async () => {
     const chatToggleHtml = showChatToggle
       ? `<div class="cfm-chat-toggle" title="展开/折叠聊天记录"><i class="fa-solid fa-caret-${isExpanded ? "down" : "right"}"></i></div>`
       : "";
-    // 正则模式下的小三角按钮（有正则脚本的角色，或当前目标空角色，也显示）
+    // 正则模式下的小三角按钮（所有角色均可展开编辑正则）
     const isRegexTarget =
       cfmCharRegexMode && cfmCharRegexTargetAvatar === char.avatar;
     let showRegexToggle = false;
     if (cfmCharRegexMode) {
-      const scripts = char?.data?.extensions?.regex_scripts;
-      showRegexToggle =
-        (Array.isArray(scripts) && scripts.length > 0) || isRegexTarget;
+      showRegexToggle = true;
     }
     const isRegexExpanded =
       showRegexToggle && cfmCharRegexExpandedAvatars.has(char.avatar);
@@ -44949,6 +45089,71 @@ jQuery(async () => {
       </div>
     `);
 
+    // 关联世界书折叠区域
+    {
+      const linkedWorldBooks = [];
+      // 主绑定世界书
+      const primaryWorld = char?.data?.extensions?.world;
+      if (primaryWorld) {
+        linkedWorldBooks.push({ name: primaryWorld, type: "主绑定" });
+      }
+      // 内嵌世界书 (character_book)
+      if (char?.data?.character_book) {
+        const embBookName = char.data.character_book.name || `${char.name || "角色"}'s Lorebook`;
+        const embEntries = char.data.character_book.entries;
+        const embEntryCount = Array.isArray(embEntries) ? embEntries.length : (embEntries ? Object.keys(embEntries).length : 0);
+        linkedWorldBooks.push({ name: embBookName, type: "内嵌", entryCount: embEntryCount });
+      }
+      // 辅助世界书 (charLore)
+      try {
+        const wiMod = getWiModuleSync();
+        const worldInfoObj = wiMod ? wiMod.world_info : null;
+        if (worldInfoObj?.charLore && Array.isArray(worldInfoObj.charLore)) {
+          const fileName = char?.avatar?.replace(/\.[^/.]+$/, "") ?? null;
+          if (fileName) {
+            const extraCharLore = worldInfoObj.charLore.find((e) => e.name === fileName);
+            if (extraCharLore?.extraBooks && Array.isArray(extraCharLore.extraBooks)) {
+              extraCharLore.extraBooks.forEach((b) => {
+                linkedWorldBooks.push({ name: b, type: "辅助" });
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[CFM] 获取角色关联辅助世界书失败", e);
+      }
+
+      detailCard.append(`
+        <div class="cfm-char-detail-worldbooks">
+          <div class="cfm-char-detail-worldbooks-header">
+            <i class="fa-solid fa-caret-right cfm-char-detail-worldbooks-arrow"></i>
+            <i class="fa-solid fa-book" style="color:#a6e3a1;margin-right:4px;font-size:12px;"></i>
+            <span>关联世界书</span>
+            <span class="cfm-char-detail-worldbooks-count">${linkedWorldBooks.length}</span>
+          </div>
+          <div class="cfm-char-detail-worldbooks-body" style="display:none;">
+            ${linkedWorldBooks.length > 0
+              ? linkedWorldBooks.map(wb => `
+                <div class="cfm-char-detail-worldbook-item">
+                  <span class="cfm-char-detail-worldbook-type">${escapeHtml(wb.type)}</span>
+                  <span class="cfm-char-detail-worldbook-name">${escapeHtml(wb.name)}</span>
+                  ${wb.entryCount !== undefined ? `<span class="cfm-char-detail-worldbook-entries">${wb.entryCount} 条</span>` : ""}
+                </div>
+              `).join("")
+              : '<div class="cfm-persona-detail-empty" style="padding:4px 8px;">无关联世界书</div>'
+            }
+          </div>
+        </div>
+      `);
+
+      detailCard.find(".cfm-char-detail-worldbooks-header").on("click", function () {
+        const body = $(this).next(".cfm-char-detail-worldbooks-body");
+        const arrow = $(this).find(".cfm-char-detail-worldbooks-arrow");
+        body.slideToggle(150);
+        arrow.toggleClass("fa-caret-right fa-caret-down");
+      });
+    }
+
     detailCard.append(sectionHtml("描述", description, "", "description"));
 
     // 第一条消息（主开场白）：只有编辑按钮，不能切换
@@ -46810,7 +47015,13 @@ jQuery(async () => {
       const presetGroups = getResourceGroups("presets");
       const presetTree = getResFolderTree("presets");
       const canUseGlobal = sourceType !== "global";
-      const canUseChar = hasCurrentChar && sourceType !== "char";
+      // 获取所有可选角色（排除来源角色）
+      const allChars = getCharacters();
+      const sourceCharAvatar = sourceType === "char" ? (sourceScope?.avatar || "") : "";
+      const availableCharTargets = allChars.filter(
+        (c) => c.avatar && c.avatar !== sourceCharAvatar,
+      );
+      const canUseChar = availableCharTargets.length > 0;
       const canUsePreset = availablePresetTargets.length > 0;
       const enabledTargetTypes = [
         canUseGlobal ? "global" : "",
@@ -46837,11 +47048,13 @@ jQuery(async () => {
       const folderOptions = getRegexTransferGlobalFolderOptions();
       const defaultTransferMode = getDefaultRegexTransferMode();
       const globalDisabledReason = canUseGlobal ? "" : "（来源位置，不可选）";
-      const charDisabledReason = !hasCurrentChar
-        ? "（当前未选择角色）"
-        : sourceType === "char"
-          ? "（来源位置，不可选）"
-          : "";
+      const charDisabledReason = !canUseChar
+        ? (sourceType === "char"
+          ? "（除来源外没有其它角色）"
+          : availableCharTargets.length === 0
+            ? "（暂无可用角色）"
+            : "")
+        : "";
       const presetDisabledReason = canUsePreset
         ? ""
         : presetItems.length === 0
@@ -46850,7 +47063,10 @@ jQuery(async () => {
             ? "（除来源外没有其它预设）"
             : "（暂无可用预设）";
       let selectedPresetTargetName = "";
+      let selectedCharTargetAvatar = "";
+      let selectedCharTargetName = "";
       let presetTransferExpandedFolders = new Set();
+      let charTransferExpandedFolders = new Set();
       const PRESET_TRANSFER_TAP_MOVE_THRESHOLD = 10;
       const overlay = $(
         '<div class="cfm-edit-popup-overlay" style="position:absolute;inset:0;background:rgba(0,0,0,0.12);z-index:100000;display:flex;align-items:center;justify-content:center;"></div>',
@@ -46870,13 +47086,23 @@ jQuery(async () => {
             <div style="display:flex;flex-direction:column;gap:8px;">
               <div style="font-size:12px;opacity:0.85;">选择目标</div>
               <label style="display:flex;align-items:center;gap:8px;cursor:${canUseGlobal ? "pointer" : "not-allowed"};opacity:${canUseGlobal ? "1" : "0.55"};"><input type="radio" name="cfm-regex-transfer-target" value="global" ${defaultTargetType === "global" ? "checked" : ""} ${canUseGlobal ? "" : "disabled"}> <span>全局正则${globalDisabledReason}</span></label>
-              <label style="display:flex;align-items:center;gap:8px;cursor:${canUseChar ? "pointer" : "not-allowed"};opacity:${canUseChar ? "1" : "0.55"};"><input type="radio" name="cfm-regex-transfer-target" value="char" ${defaultTargetType === "char" ? "checked" : ""} ${canUseChar ? "" : "disabled"}> <span>角色正则（当前角色：${escapeHtml(currentCharName || "未选择")}）${escapeHtml(charDisabledReason)}</span></label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:${canUseChar ? "pointer" : "not-allowed"};opacity:${canUseChar ? "1" : "0.55"};"><input type="radio" name="cfm-regex-transfer-target" value="char" ${defaultTargetType === "char" ? "checked" : ""} ${canUseChar ? "" : "disabled"}> <span>角色正则${escapeHtml(charDisabledReason)}</span></label>
               <label style="display:flex;align-items:center;gap:8px;cursor:${canUsePreset ? "pointer" : "not-allowed"};opacity:${canUsePreset ? "1" : "0.55"};"><input type="radio" name="cfm-regex-transfer-target" value="preset" ${defaultTargetType === "preset" ? "checked" : ""} ${canUsePreset ? "" : "disabled"}> <span>其它预设正则${escapeHtml(presetDisabledReason)}</span></label>
             </div>
             ${enabledTargetTypes.length === 0 ? '<div style="font-size:12px;line-height:1.6;color:#f38ba8;opacity:0.92;">当前没有可用的互通目标，请先切换到角色或预设后再试。</div>' : ""}
             <div class="cfm-regex-transfer-global-folder" style="display:flex;flex-direction:column;gap:8px;">
               <div style="font-size:12px;opacity:0.85;">全局分组</div>
               <select class="text_pole cfm-regex-transfer-folder-select"></select>
+            </div>
+            <div class="cfm-regex-transfer-char-target" style="display:none;flex-direction:column;gap:8px;min-height:0;">
+              <div style="font-size:12px;opacity:0.85;">选择目标角色</div>
+              <div class="cfm-entry-transfer-search">
+                <input type="text" class="cfm-entry-transfer-search-input cfm-regex-transfer-char-search-input" placeholder="搜索角色..." />
+                <button class="cfm-entry-transfer-expand-all cfm-regex-transfer-char-expand-all" title="展开全部"><i class="fa-solid fa-angles-down"></i></button>
+                <button class="cfm-entry-transfer-collapse-all cfm-regex-transfer-char-collapse-all" title="收起全部"><i class="fa-solid fa-angles-up"></i></button>
+              </div>
+              <div class="cfm-entry-transfer-tree-container cfm-regex-transfer-char-tree" style="max-height:min(42vh,360px);overflow-y:auto;overflow-x:hidden;"></div>
+              <div class="cfm-entry-transfer-selected-hint cfm-regex-transfer-char-hint"></div>
             </div>
             <div class="cfm-regex-transfer-preset-target" style="display:none;flex-direction:column;gap:8px;min-height:0;">
               <div style="font-size:12px;opacity:0.85;">选择目标预设</div>
@@ -46912,6 +47138,173 @@ jQuery(async () => {
         );
       });
       folderSelect.val(defaultGlobalFolderId || "__ungrouped__");
+
+      // === 角色选择树 ===
+      const charSearchInput = dialog.find(".cfm-regex-transfer-char-search-input");
+      const charTreeContainer = dialog.find(".cfm-regex-transfer-char-tree");
+      const charHintEl = dialog.find(".cfm-regex-transfer-char-hint");
+
+      function updateCharTargetHint() {
+        if (selectedCharTargetAvatar) {
+          charHintEl.html(
+            `已选目标角色：<strong>${escapeHtml(selectedCharTargetName || selectedCharTargetAvatar)}</strong>`,
+          );
+          return;
+        }
+        charHintEl.text("请选择一个目标角色");
+      }
+
+      function renderCharTargetTree() {
+        const query = String(charSearchInput.val() || "").trim().toLowerCase();
+        charTreeContainer.empty();
+
+        const filtered = availableCharTargets.filter((c) => {
+          if (!query) return true;
+          const name = String(c.name || "").toLowerCase();
+          const avatar = String(c.avatar || "").toLowerCase();
+          return name.includes(query) || avatar.includes(query);
+        });
+
+        if (filtered.length === 0) {
+          charTreeContainer.html(
+            '<div style="padding:16px;opacity:0.5;text-align:center;">无可选角色</div>',
+          );
+          return;
+        }
+
+        // 按文件夹组织角色
+        const tagMap = getTagMap();
+        const folderTagIdSet = new Set(getFolderTagIds());
+        const folderChars = {};
+        const ungroupedChars = [];
+
+        for (const ch of filtered) {
+          const charTags = tagMap[ch.avatar] || [];
+          const charFolderTags = charTags.filter((t) => folderTagIdSet.has(t));
+          if (charFolderTags.length > 0) {
+            // 找最深的文件夹
+            let deepest = charFolderTags[0];
+            let maxD = getFolderPath(deepest).length;
+            for (let i = 1; i < charFolderTags.length; i++) {
+              const d = getFolderPath(charFolderTags[i]).length;
+              if (d > maxD) { deepest = charFolderTags[i]; maxD = d; }
+            }
+            if (!folderChars[deepest]) folderChars[deepest] = [];
+            folderChars[deepest].push(ch);
+          } else {
+            ungroupedChars.push(ch);
+          }
+        }
+
+        function renderCharItem(ch, depth) {
+          const isSelected = selectedCharTargetAvatar === ch.avatar;
+          const displayName = ch.name || ch.avatar || "(未命名)";
+          const itemNode = $(
+            `<div class="cfm-transfer-item ${isSelected ? "cfm-transfer-item-selected" : ""}" data-avatar="${escapeHtml(ch.avatar)}" style="padding-left:${(depth) * 16 + 12}px;display:flex;align-items:center;gap:8px;">
+              <span class="cfm-transfer-item-icon"><i class="fa-solid fa-user"></i></span>
+              <span class="cfm-transfer-item-name">${escapeHtml(displayName)}</span>
+            </div>`,
+          );
+          bindPresetTransferTreeTap(itemNode, () => {
+            selectedCharTargetAvatar = ch.avatar;
+            selectedCharTargetName = displayName;
+            renderCharTargetTree();
+            updateCharTargetHint();
+          });
+          charTreeContainer.append(itemNode);
+        }
+
+        function renderCharFolder(folderId, depth) {
+          const displayName = getTagName(folderId);
+          const isExpanded = charTransferExpandedFolders.has(folderId);
+          const childFolderIds = getChildFolders(folderId);
+          const charsInFolder = folderChars[folderId] || [];
+          const hasContent = charsInFolder.length > 0 || childFolderIds.some((cid) => folderChars[cid]?.length > 0);
+
+          if (query && !hasContent && !displayName.toLowerCase().includes(query)) {
+            return;
+          }
+
+          const folderNode = $(`
+            <div class="cfm-transfer-folder" data-folder-id="${escapeHtml(folderId)}" style="padding-left:${depth * 16 + 8}px;">
+              <span class="cfm-transfer-folder-arrow"><i class="fa-solid fa-caret-${isExpanded ? "down" : "right"}"></i></span>
+              <span class="cfm-transfer-folder-icon"><i class="fa-solid fa-folder${isExpanded ? "-open" : ""}"></i></span>
+              <span class="cfm-transfer-folder-name">${escapeHtml(displayName)}</span>
+              <span class="cfm-transfer-folder-count">${charsInFolder.length}</span>
+            </div>
+          `);
+          bindPresetTransferTreeTap(folderNode, () => {
+            if (charTransferExpandedFolders.has(folderId)) {
+              charTransferExpandedFolders.delete(folderId);
+            } else {
+              charTransferExpandedFolders.add(folderId);
+            }
+            renderCharTargetTree();
+          });
+          charTreeContainer.append(folderNode);
+
+          if (isExpanded || query) {
+            for (const childId of childFolderIds) renderCharFolder(childId, depth + 1);
+            for (const ch of charsInFolder) renderCharItem(ch, depth + 1);
+          }
+        }
+
+        const rootFolders = getTopLevelFolders();
+        for (const fid of rootFolders) renderCharFolder(fid, 0);
+
+        if (ungroupedChars.length > 0) {
+          const uncatId = "__char_ungrouped__";
+          const isUncatExpanded = charTransferExpandedFolders.has(uncatId);
+          const uncatNode = $(`
+            <div class="cfm-transfer-folder cfm-transfer-folder-ungrouped" style="padding-left:8px;">
+              <span class="cfm-transfer-folder-arrow"><i class="fa-solid fa-caret-${isUncatExpanded ? "down" : "right"}"></i></span>
+              <span class="cfm-transfer-folder-icon"><i class="fa-solid fa-box-open"></i></span>
+              <span class="cfm-transfer-folder-name">未归类</span>
+              <span class="cfm-transfer-folder-count">${ungroupedChars.length}</span>
+            </div>
+          `);
+          bindPresetTransferTreeTap(uncatNode, () => {
+            if (charTransferExpandedFolders.has(uncatId)) {
+              charTransferExpandedFolders.delete(uncatId);
+            } else {
+              charTransferExpandedFolders.add(uncatId);
+            }
+            renderCharTargetTree();
+          });
+          charTreeContainer.append(uncatNode);
+
+          if (isUncatExpanded || query) {
+            for (const ch of ungroupedChars) renderCharItem(ch, 1);
+          }
+        }
+
+        if (charTreeContainer.children().length === 0) {
+          charTreeContainer.html(
+            '<div style="padding:16px;opacity:0.5;text-align:center;">无可选角色</div>',
+          );
+        }
+      }
+
+      charSearchInput.on("input", () => renderCharTargetTree());
+      dialog
+        .find(".cfm-regex-transfer-char-expand-all")
+        .on("click touchend", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          for (const id of getFolderTagIds()) {
+            charTransferExpandedFolders.add(id);
+          }
+          charTransferExpandedFolders.add("__char_ungrouped__");
+          renderCharTargetTree();
+        });
+      dialog
+        .find(".cfm-regex-transfer-char-collapse-all")
+        .on("click touchend", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          charTransferExpandedFolders.clear();
+          renderCharTargetTree();
+        });
 
       function bindPresetTransferTreeTap(target, handler) {
         target
@@ -47110,6 +47503,13 @@ jQuery(async () => {
           .find(".cfm-regex-transfer-global-folder")
           .toggle(targetType === "global");
         dialog
+          .find(".cfm-regex-transfer-char-target")
+          .css("display", targetType === "char" ? "flex" : "none");
+        if (targetType === "char") {
+          renderCharTargetTree();
+          updateCharTargetHint();
+        }
+        dialog
           .find(".cfm-regex-transfer-preset-target")
           .css("display", targetType === "preset" ? "flex" : "none");
         if (targetType === "preset") {
@@ -47160,6 +47560,10 @@ jQuery(async () => {
           cfmToastr.warning("当前没有可用的目标位置");
           return;
         }
+        if (targetType === "char" && !selectedCharTargetAvatar) {
+          cfmToastr.warning("请选择目标角色");
+          return;
+        }
         if (targetType === "preset" && !selectedPresetTargetName) {
           cfmToastr.warning("请选择目标预设");
           return;
@@ -47171,6 +47575,8 @@ jQuery(async () => {
               .val() || "move",
           targetType,
           selectedPresetName: selectedPresetTargetName,
+          selectedCharAvatar: selectedCharTargetAvatar,
+          selectedCharName: selectedCharTargetName,
           globalFolderId:
             folderSelect.val() || defaultGlobalFolderId || "__ungrouped__",
         });
@@ -47405,14 +47811,16 @@ jQuery(async () => {
         folderId: transferConfig.globalFolderId || "__ungrouped__",
       };
     } else if (transferConfig.targetType === "char") {
-      if (!currentCharAvatar) {
+      const targetCharAvatar = transferConfig.selectedCharAvatar || currentCharAvatar;
+      const targetCharName = transferConfig.selectedCharName || currentCharName;
+      if (!targetCharAvatar) {
         cfmToastr.warning("当前没有可用的目标角色");
         return;
       }
       targetScope = {
         type: "char",
-        avatar: currentCharAvatar,
-        name: currentCharName,
+        avatar: targetCharAvatar,
+        name: targetCharName,
       };
     } else if (transferConfig.targetType === "preset") {
       const targetPresetName = String(

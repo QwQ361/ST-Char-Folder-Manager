@@ -6463,6 +6463,81 @@ input[type="number"].cfm-wi-de-input::-webkit-outer-spin-button {
   border-radius: 8px;
   margin: 6px 0 8px;
 }
+/* 角色卡详情 - 关联世界书折叠区域 */
+.cfm-char-detail-worldbooks {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 2px 0;
+}
+.cfm-char-detail-worldbooks-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 2px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  transition: color 0.15s;
+}
+.cfm-char-detail-worldbooks-header:hover {
+  color: rgba(255, 255, 255, 0.95);
+}
+.cfm-char-detail-worldbooks-arrow {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
+  transition: transform 0.2s;
+  min-width: 10px;
+  text-align: center;
+}
+.cfm-char-detail-worldbooks-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0 6px;
+  border-radius: 8px;
+  line-height: 1.6;
+}
+.cfm-char-detail-worldbooks-body {
+  padding: 4px 0 2px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cfm-char-detail-worldbook-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+}
+.cfm-char-detail-worldbook-type {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(166, 227, 161, 0.15);
+  color: #a6e3a1;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.cfm-char-detail-worldbook-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cfm-char-detail-worldbook-entries {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 #cfm-overlay .cfm-preset-detail-opening-loading {
   position: fixed;
   top: 0;
