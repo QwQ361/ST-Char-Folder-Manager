@@ -528,7 +528,7 @@
   margin-bottom: 6px;
   font-weight: 600;
 }
-.cfm-config-section input[type="checkbox"],
+.cfm-config-section input[type="checkbox"]:not(.cfm-layout-toggle input),
 .cfm-config-section input[type="radio"] {
   appearance: auto !important;
   -webkit-appearance: auto !important;
@@ -541,6 +541,20 @@
   margin: 0;
   flex: 0 0 auto;
   accent-color: #89b4fa;
+  cursor: pointer;
+}
+/* 布局开关内的 checkbox 需要隐藏，只显示滑块样式 */
+.cfm-config-section .cfm-layout-toggle input[type="checkbox"] {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  opacity: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  margin: 0;
   cursor: pointer;
 }
 .cfm-config-tab-shell {
@@ -4179,6 +4193,63 @@ textarea.cfm-edit-input {
   font-style: italic;
 }
 
+/* 逐个重命名表格 */
+.cfm-rename-individual-field {
+  display: none;
+  margin-bottom: 12px;
+}
+.cfm-rename-individual-list {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid rgba(137, 180, 250, 0.18);
+  border-radius: 6px;
+  padding: 6px 0;
+}
+.cfm-rename-individual-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  transition: background 0.12s;
+}
+.cfm-rename-individual-row:hover {
+  background: rgba(137, 180, 250, 0.06);
+}
+.cfm-rename-individual-row .cfm-rename-old-name {
+  flex: 0 0 40%;
+  min-width: 0;
+  font-size: 12.5px;
+  color: #a6adc8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 4px;
+}
+.cfm-rename-individual-row .cfm-rename-arrow {
+  flex: 0 0 auto;
+  color: #6c7086;
+  font-size: 12px;
+}
+.cfm-rename-individual-row .cfm-rename-new-input {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 12.5px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(137, 180, 250, 0.2);
+  border-radius: 4px;
+  color: #cdd6f4;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.cfm-rename-individual-row .cfm-rename-new-input:focus {
+  border-color: rgba(137, 180, 250, 0.5);
+}
+.cfm-rename-individual-row .cfm-rename-new-input::placeholder {
+  color: #585b70;
+  font-style: italic;
+}
+
 /* 多选切换按钮 */
 .cfm-multisel-toggle {
   background: none !important;
@@ -6635,6 +6706,59 @@ input[type="number"].cfm-wi-de-input::-webkit-outer-spin-button {
   white-space: nowrap;
   margin-left: 2px;
 }
+/* ==================== 备份同步进度遮罩 ==================== */
+.cfm-sync-progress-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(17, 17, 27, 0.58);
+  backdrop-filter: blur(2px);
+  z-index: 10025;
+  pointer-events: auto;
+}
+.cfm-sync-progress-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  min-width: 240px;
+  padding: 14px 24px;
+  max-width: min(calc(100vw - 32px), 520px);
+  border-radius: 999px;
+  background: rgba(24, 24, 37, 0.98);
+  border: 1px solid rgba(250, 204, 21, 0.32);
+  color: #fef9c3;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+  white-space: normal;
+  word-break: break-word;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.36);
+}
+.cfm-sync-progress-box i.fa-spinner {
+  color: #facc15;
+  flex: 0 0 auto;
+  font-size: 15px;
+}
+.cfm-sync-progress-text {
+  color: inherit;
+  opacity: 1;
+}
+.cfm-sync-progress-counter {
+  color: #facc15;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  margin-left: 3px;
+}
 .cfm-persona-detail-section {
   display: flex;
   flex-direction: column;
@@ -6826,6 +6950,110 @@ input[type="number"].cfm-wi-de-input::-webkit-outer-spin-button {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.35);
   margin-left: auto;
+}
+
+/* 聊天记录页 */
+.cfm-chatlog-char-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.cfm-chatlog-char-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #cdd6f4;
+}
+.cfm-chatlog-chat-total {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+}
+.cfm-chatlog-row {
+  align-items: flex-start;
+}
+.cfm-chatlog-row .cfm-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cfm-chatlog-row .cfm-row-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cfm-chatlog-row .cfm-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: 0;
+}
+.cfm-chatlog-current {
+  background: rgba(137, 180, 250, 0.08);
+  border-left: 2px solid rgba(137, 180, 250, 0.6);
+}
+.cfm-chatlog-current-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #89b4fa;
+  background: rgba(137, 180, 250, 0.14);
+  border: 1px solid rgba(137, 180, 250, 0.25);
+}
+.cfm-chatlog-note {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.62);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cfm-chatlog-note i {
+  margin-right: 4px;
+  color: #f9e2af;
+}
+.cfm-chatlog-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+.cfm-chatlog-action-btn,
+.cfm-chat-manage-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.cfm-chatlog-action-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.58);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background-color 0.15s;
+}
+.cfm-chatlog-action-btn:hover {
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.08);
+}
+.cfm-chat-manage-btn {
+  color: #a6e3a1 !important;
 }
 
 /* 批量操作工具栏 */
