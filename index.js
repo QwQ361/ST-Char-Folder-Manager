@@ -21416,9 +21416,12 @@ jQuery(async () => {
             }
             restorePresetSelectionAfterEdit();
             // 额外再清一次，确保没有泄漏抑制标志
-            try {
-              _cfmSuppressAutoClose = false;
-            } catch (_) { /* 同上 */ }
+            // 延时释放以配合 restorePresetSelectionAfterEdit 内部的 change 事件处理
+            window.setTimeout(() => {
+              try {
+                _cfmSuppressAutoClose = false;
+              } catch (_) { /* 同上 */ }
+            }, 900);
           }, delay);
         });
       }
@@ -21439,35 +21442,22 @@ jQuery(async () => {
       if (currentValue !== valueToRestore) {
         beginSuppressPresetRegexToast();
         try {
-          // 移动端修复：不触发 change 事件以避免 onSettingsPresetChange() 导致面板关闭。
-          // 仅静默更新 select 值和内部状态。
+          // 移动端修复：触发 change 事件以完整重新加载预设数据（prompts 列表等），
+          // 通过 _cfmSuppressAutoClose 抑制移动端自动关闭面板的副作用。
+          _cfmSuppressAutoClose = true;
           pm.select.val(valueToRestore);
-
-          // 手动同步 oai_settings.preset_settings_openai 内部状态
-          const selectedText = pm.select.find(':selected').text();
-          if (selectedText) {
-            try {
-              const { chatCompletionSettings } = getContext();
-              if (chatCompletionSettings) {
-                chatCompletionSettings.preset_settings_openai = selectedText;
-              }
-            } catch (_e) { /* 静默失败 */ }
-          }
-
-          // 静默保存设置，不触发 UI 级联更新
-          try {
-            const { saveSettingsDebounced } = getContext();
-            if (typeof saveSettingsDebounced === 'function') {
-              saveSettingsDebounced();
-            }
-          } catch (_) { /* 静默失败 */ }
+          pm.select.trigger("change");
         } finally {
-          window.setTimeout(() => endSuppressPresetRegexToast(), 300);
+          window.setTimeout(() => {
+            endSuppressPresetRegexToast();
+            _cfmSuppressAutoClose = false;
+          }, 800);
         }
       }
     } catch (e) {
       console.warn("[CFM] 恢复预设选择失败", e);
       endSuppressPresetRegexToast();
+      _cfmSuppressAutoClose = false;
     }
   }
 
