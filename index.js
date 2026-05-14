@@ -3902,6 +3902,8 @@ jQuery(async () => {
       extension_settings[extensionName].folders = {};
     if (!extension_settings[extensionName].favorites)
       extension_settings[extensionName].favorites = [];
+    if (!Array.isArray(extension_settings[extensionName].hiddenChars))
+      extension_settings[extensionName].hiddenChars = [];
     // 迁移旧 localStorage 数据
     try {
       const oldRaw = localStorage.getItem(STORAGE_KEY);
@@ -4699,6 +4701,35 @@ jQuery(async () => {
   function getFavoriteCharacters() {
     const favs = getFavorites();
     return getCharacters().filter((c) => favs.includes(c.avatar));
+  }
+
+  // ==================== 隐藏角色卡管理 ====================
+  function getHiddenChars() {
+    return extension_settings[extensionName].hiddenChars || [];
+  }
+  function isCharHidden(avatar) {
+    return getHiddenChars().includes(avatar);
+  }
+  function toggleCharHidden(avatar) {
+    const arr = getHiddenChars();
+    const idx = arr.indexOf(avatar);
+    if (idx >= 0) {
+      arr.splice(idx, 1);
+    } else {
+      arr.push(avatar);
+    }
+    extension_settings[extensionName].hiddenChars = arr;
+    getContext().saveSettingsDebounced();
+    return idx < 0;
+  }
+  // 总开关：是否显示隐藏的角色卡（默认 false）
+  let cfmShowHiddenChars = false;
+  // 过滤掉隐藏角色卡（当总开关关闭时）
+  function filterHiddenChars(chars) {
+    if (cfmShowHiddenChars) return chars;
+    const hidden = getHiddenChars();
+    if (hidden.length === 0) return chars;
+    return chars.filter((c) => !hidden.includes(c.avatar));
   }
 
   // ==================== 标签自动同步 ====================
@@ -7150,7 +7181,9 @@ jQuery(async () => {
         ".cfm-dup-dialog",
         ".cfm-fullscreen-confirm-dialog",
         ".cfm-batch-progress-box",
-      ].map(s => `body ${s}`).join(", ");
+      ]
+        .map((s) => `body ${s}`)
+        .join(", ");
       blurCSS = `\n${blurSelector} {\n  backdrop-filter: ${blurVal} !important;\n  -webkit-backdrop-filter: ${blurVal} !important;\n}`;
     }
 
@@ -8531,7 +8564,8 @@ jQuery(async () => {
         .addClass("fa-file-export");
       $(".cfm-export-btn").attr("title", function () {
         if ($(this).attr("id") === "cfm-export-char-btn") return "导出角色卡";
-        if ($(this).attr("id") === "cfm-export-chatlog-btn") return "导出聊天记录";
+        if ($(this).attr("id") === "cfm-export-chatlog-btn")
+          return "导出聊天记录";
         if ($(this).attr("id") === "cfm-export-preset-btn") return "导出预设";
         if ($(this).attr("id") === "cfm-export-theme-btn") return "导出主题";
         if ($(this).attr("id") === "cfm-export-bg-btn") return "导出背景";
@@ -9529,7 +9563,8 @@ jQuery(async () => {
       .addClass("fa-file-export");
     $(".cfm-export-btn").attr("title", function () {
       if ($(this).attr("id") === "cfm-export-char-btn") return "导出角色卡";
-      if ($(this).attr("id") === "cfm-export-chatlog-btn") return "导出聊天记录";
+      if ($(this).attr("id") === "cfm-export-chatlog-btn")
+        return "导出聊天记录";
       if ($(this).attr("id") === "cfm-export-preset-btn") return "导出预设";
       if ($(this).attr("id") === "cfm-export-theme-btn") return "导出主题";
       if ($(this).attr("id") === "cfm-export-bg-btn") return "导出背景";
@@ -10655,7 +10690,9 @@ jQuery(async () => {
     overlay.find("#cfm-qr-view").hide();
 
     overlay.find("#cfm-global-search-bar").hide();
-    overlay.find("#cfm-chatlogs-search-bar").toggle(normalizedTab === "chatlogs");
+    overlay
+      .find("#cfm-chatlogs-search-bar")
+      .toggle(normalizedTab === "chatlogs");
     overlay.find("#cfm-preset-search-bar").toggle(normalizedTab === "presets");
     overlay
       .find("#cfm-worldinfo-search-bar")
@@ -12429,14 +12466,18 @@ jQuery(async () => {
         const chatGroups = getChatlogGroups(avatar);
         // 删除前记录当前聊天信息，用于判断是否删除了当前聊天
         const ctxBeforeBatchDel = getContext();
-        const curChatIdBeforeBatchDel = ctxBeforeBatchDel.getCurrentChatId ? ctxBeforeBatchDel.getCurrentChatId() : null;
+        const curChatIdBeforeBatchDel = ctxBeforeBatchDel.getCurrentChatId
+          ? ctxBeforeBatchDel.getCurrentChatId()
+          : null;
         const currentCharAvatarBeforeBatchDel = getCurrentCharAvatar();
         let deletedCurrentChat = false;
         for (const fn of selected) {
           try {
             // deleteChatFile 内部会处理 .jsonl 后缀
             const fnBase = fn.replace(/\.jsonl$/i, "");
-            const isCurrentChatFile = avatar === currentCharAvatarBeforeBatchDel && fnBase === curChatIdBeforeBatchDel;
+            const isCurrentChatFile =
+              avatar === currentCharAvatarBeforeBatchDel &&
+              fnBase === curChatIdBeforeBatchDel;
             const ok = await deleteChatFile(avatar, fn);
             if (ok) {
               // 清理聊天记录分组
@@ -21381,23 +21422,33 @@ jQuery(async () => {
         const suppressAutoCloseHandler = () => {
           try {
             _cfmSuppressAutoClose = true;
-          } catch (_) { /* _cfmSuppressAutoClose 未声明时静默跳过 */ }
+          } catch (_) {
+            /* _cfmSuppressAutoClose 未声明时静默跳过 */
+          }
           // 在保存完成 + 恢复预设选择之后再释放抑制标志，保留足够长的缓冲窗口。
           const releaseDelay = isSaveButton ? 1500 : 800;
           window.setTimeout(() => {
             try {
               _cfmSuppressAutoClose = false;
-            } catch (_) { /* 同上 */ }
+            } catch (_) {
+              /* 同上 */
+            }
           }, releaseDelay);
         };
-        btn.addEventListener("pointerdown", suppressAutoCloseHandler, { passive: true });
-        btn.addEventListener("touchstart", suppressAutoCloseHandler, { passive: true });
+        btn.addEventListener("pointerdown", suppressAutoCloseHandler, {
+          passive: true,
+        });
+        btn.addEventListener("touchstart", suppressAutoCloseHandler, {
+          passive: true,
+        });
 
         btn.addEventListener("click", () => {
           // click 时也再次确保抑制标志已设置（某些浏览器可能未触发 pointerdown）
           try {
             _cfmSuppressAutoClose = true;
-          } catch (_) { /* 同上 */ }
+          } catch (_) {
+            /* 同上 */
+          }
           // 对于保存按钮，需要等原生 handleSavePrompt 完成，
           // 再把当前运行时设置静默写回到当前选中的预设文件，
           // 最后才恢复原来的预设选择。
@@ -21420,7 +21471,9 @@ jQuery(async () => {
             window.setTimeout(() => {
               try {
                 _cfmSuppressAutoClose = false;
-              } catch (_) { /* 同上 */ }
+              } catch (_) {
+                /* 同上 */
+              }
             }, 900);
           }, delay);
         });
@@ -27201,7 +27254,10 @@ jQuery(async () => {
           await deleteCharacterChatByNameFunc(String(charIdx), fileNameNoExt);
           deleted = true;
         } catch (funcErr) {
-          console.warn("[CFM] deleteCharacterChatByName 抛出异常，回退到直接 API 调用:", funcErr);
+          console.warn(
+            "[CFM] deleteCharacterChatByName 抛出异常，回退到直接 API 调用:",
+            funcErr,
+          );
           // 回退到直接 API 调用
           const ctx = getContext();
           const response = await fetch("/api/chats/delete", {
@@ -29787,6 +29843,7 @@ jQuery(async () => {
                         <div class="cfm-right-header">
                             <span class="cfm-rh-path" id="cfm-rh-path">选择左侧文件夹查看内容</span>
                             <span class="cfm-rh-count" id="cfm-rh-count"></span>
+                            <button class="cfm-show-hidden-btn" id="cfm-show-hidden-char-btn" title="显示隐藏的角色卡"><i class="fa-regular fa-eye-slash"></i></button>
                             <button class="cfm-import-btn" id="cfm-import-char-btn" title="导入角色卡"><i class="fa-solid fa-file-import"></i></button>
                             <input type="file" id="cfm-import-char-file" multiple accept=".json,.png,.yaml,.yml,.charx,.byaf" style="display:none;">
                             <button class="cfm-chat-mode-btn" id="cfm-chat-mode-btn" title="显示聊天记录"><i class="fa-solid fa-comments"></i></button>
@@ -30361,6 +30418,7 @@ jQuery(async () => {
       }
       // 切换视图
       popup.find("#cfm-chars-view").hide();
+      popup.find("#cfm-chatlogs-view").toggle(initialTab === "chatlogs");
       popup.find("#cfm-presets-view").toggle(initialTab === "presets");
       popup.find("#cfm-worldinfo-view").toggle(initialTab === "worldinfo");
       popup.find("#cfm-themes-view").toggle(initialTab === "themes");
@@ -31632,6 +31690,29 @@ jQuery(async () => {
       e.preventDefault();
       e.stopPropagation();
       toggleCharRegexMode();
+    });
+
+    // ==================== 显示/隐藏 隐藏角色卡 总开关 ====================
+    popup.find("#cfm-show-hidden-char-btn").on("click touchend", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      cfmShowHiddenChars = !cfmShowHiddenChars;
+      const $btn = $(this);
+      $btn.toggleClass("cfm-show-hidden-active", cfmShowHiddenChars);
+      $btn
+        .find("i")
+        .attr(
+          "class",
+          cfmShowHiddenChars ? "fa-solid fa-eye" : "fa-regular fa-eye-slash",
+        );
+      $btn.attr(
+        "title",
+        cfmShowHiddenChars
+          ? "已显示隐藏角色卡（点击恢复隐藏）"
+          : "显示隐藏的角色卡",
+      );
+      renderLeftTree();
+      renderRightPane();
     });
 
     // ==================== 预设正则查看模式按钮 ====================
@@ -33107,6 +33188,7 @@ jQuery(async () => {
     renderLeftTree();
     // 触发初始tab对应视图的渲染
     if (initialTab === "chars") renderRightPane();
+    else if (initialTab === "chatlogs") renderChatlogsView();
     else if (initialTab === "presets") renderPresetsView();
     else if (initialTab === "worldinfo") renderWorldInfoView();
     else if (initialTab === "themes") renderThemesView();
@@ -33496,7 +33578,7 @@ jQuery(async () => {
         chars = getCharacters();
       }
 
-      const matched = chars.filter((c) => {
+      let matched = chars.filter((c) => {
         const pool = [
           (c.name || "").toLowerCase(),
           (c.data?.creator || "").toLowerCase(),
@@ -33505,6 +33587,8 @@ jQuery(async () => {
         ];
         return fuzzyMatch(q, pool);
       });
+      // 过滤隐藏角色卡（当总开关关闭时）
+      matched = filterHiddenChars(matched);
 
       pathEl.text(`搜索角色: "${q}"`);
       countEl.text(`${matched.length} 个结果`);
@@ -35241,7 +35325,7 @@ jQuery(async () => {
 
     if (selectedTreeNode === "__uncategorized__") {
       pathEl.text("未归类角色");
-      let chars = getUncategorizedCharacters();
+      let chars = filterHiddenChars(getUncategorizedCharacters());
       if (rightCharSortMode) {
         chars = sortCharacters(chars, rightCharSortMode);
       }
@@ -35289,7 +35373,7 @@ jQuery(async () => {
 
     if (selectedTreeNode === "__favorites__") {
       pathEl.text("⭐ 收藏");
-      let chars = getFavoriteCharacters();
+      let chars = filterHiddenChars(getFavoriteCharacters());
       if (rightCharSortMode) {
         chars = sortCharacters(chars, rightCharSortMode);
       }
@@ -35345,7 +35429,7 @@ jQuery(async () => {
     pathEl.text(path);
 
     const childFolders = sortFolders(getChildFolders(folderId));
-    let chars = getCharactersInFolder(folderId);
+    let chars = filterHiddenChars(getCharactersInFolder(folderId));
     if (rightCharSortMode) {
       chars = sortCharacters(chars, rightCharSortMode);
     }
@@ -35666,6 +35750,12 @@ jQuery(async () => {
       !cfmExportMode && !cfmResDeleteMode && !cfmEditMode && !cfmMultiSelectMode
         ? `<div class="cfm-row-edit-btn" title="编辑作者名/版本名"><i class="fa-solid fa-pen-to-square"></i></div>`
         : "";
+    // 非模式状态下显示单个隐藏/取消隐藏按钮
+    const charIsHidden = isCharHidden(char.avatar);
+    const singleHideBtn =
+      !cfmExportMode && !cfmResDeleteMode && !cfmEditMode && !cfmMultiSelectMode
+        ? `<div class="cfm-row-hide-btn ${charIsHidden ? "cfm-row-hide-active" : ""}" title="${charIsHidden ? "取消隐藏角色卡" : "隐藏角色卡"}"><i class="fa-${charIsHidden ? "solid fa-eye-slash" : "regular fa-eye"}"></i></div>`
+        : "";
     // 聊天模式下的小三角按钮（需同时检查自定义布局中 chatmode 是否可见）
     const chatmodeVisible =
       cfmChatMode && getVisibleActions("chars").includes("chatmode");
@@ -35704,13 +35794,14 @@ jQuery(async () => {
     const isDetailExpanded = cfmCharDetailExpandedAvatars.has(char.avatar);
     const detailToggleHtml = `<div class="cfm-char-detail-toggle" title="展开/折叠角色卡具体设定"><i class="fa-solid fa-caret-${isDetailExpanded ? "down" : "right"}"></i></div>`;
     const row = $(`
-            <div class="cfm-row cfm-row-char ${regexHighlightClass} ${isDelSel ? "cfm-res-delete-row-selected" : ""} ${isExportSel ? "cfm-export-row-selected" : ""} ${isEditSel ? "cfm-edit-row-selected" : ""} ${isSelected ? "cfm-multisel-row-selected" : ""}" data-avatar="${escapeHtml(char.avatar)}" data-res-id="${escapeHtml(char.avatar)}" draggable="true">
+            <div class="cfm-row cfm-row-char ${charIsHidden ? "cfm-row-char-hidden" : ""} ${regexHighlightClass} ${isDelSel ? "cfm-res-delete-row-selected" : ""} ${isExportSel ? "cfm-export-row-selected" : ""} ${isEditSel ? "cfm-edit-row-selected" : ""} ${isSelected ? "cfm-multisel-row-selected" : ""}" data-avatar="${escapeHtml(char.avatar)}" data-res-id="${escapeHtml(char.avatar)}" draggable="true">
                 ${checkboxHtml}
                 ${chatToggleHtml}
                 ${regexToggleHtml}
                 <div class="cfm-row-icon"><img src="${thumbUrl}" alt="" loading="lazy" onerror="this.src='/img/ai4.png'"></div>
                 <div class="cfm-row-name"><span class="cfm-char-name-inline">${detailToggleHtml}<span class="cfm-char-name-text">${escapeHtml(char.name)}</span></span>${charMetaHtml}${folderPathHtml}</div>
                 ${singleEditBtn}
+                ${singleHideBtn}
                 <div class="cfm-row-star ${fav ? "cfm-star-active" : ""}" title="${fav ? "取消收藏" : "添加收藏"}"><i class="fa-${fav ? "solid" : "regular"} fa-star"></i></div>
             </div>
         `);
@@ -35738,6 +35829,15 @@ jQuery(async () => {
     // 单个铅笔按钮点击事件
     bindTouchSafeTap(row.find(".cfm-row-edit-btn"), () => {
       executeCharEdit([char.avatar]);
+    });
+    // 单个眼睛按钮点击事件：切换隐藏状态
+    bindTouchSafeTap(row.find(".cfm-row-hide-btn"), () => {
+      const nowHidden = toggleCharHidden(char.avatar);
+      cfmToastr.success(
+        nowHidden ? `已隐藏「${char.name}」` : `已取消隐藏「${char.name}」`,
+      );
+      // 重新渲染（如果总开关关闭则该行会消失）
+      renderRightPane();
     });
     // 聊天模式下小三角点击：展开/折叠聊天记录
     bindTouchSafeTap(row.find(".cfm-chat-toggle"), async () => {
@@ -35843,6 +35943,7 @@ jQuery(async () => {
       if (Date.now() < suppressRowClickUntil) return;
       if ($(e.target).closest(".cfm-row-star").length) return;
       if ($(e.target).closest(".cfm-row-edit-btn").length) return;
+      if ($(e.target).closest(".cfm-row-hide-btn").length) return;
       if ($(e.target).closest(".cfm-char-detail-toggle").length) return;
       if ($(e.target).closest(".cfm-chat-toggle").length) return;
       if ($(e.target).closest(".cfm-regex-toggle").length) return;
@@ -36634,6 +36735,36 @@ jQuery(async () => {
     body.append(section);
   }
 
+  // ==================== 共享：合并同名 User 开关 ====================
+  function renderMergeSameNameUserSection(body) {
+    const current = !!extension_settings[extensionName].mergeSameNameUser;
+    const section = $(`
+      <div class="cfm-config-section">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="cfm-merge-same-name-user" ${current ? "checked" : ""}>
+          <span>是否合并同名user</span>
+        </label>
+        <div class="cfm-icon-config-hint">开启后，User页中同名的User会被合并为一个“叠堆”条目（叠加显示头像），点击展开可查看并切换其中的具体User。</div>
+      </div>
+    `);
+    section.find("#cfm-merge-same-name-user").on("change", function () {
+      const checked = $(this).prop("checked");
+      extension_settings[extensionName].mergeSameNameUser = checked;
+      getContext().saveSettingsDebounced();
+      cfmToastr.success(checked ? "已开启合并同名User" : "已关闭合并同名User");
+      // 立即刷新 User 视图（如果当前已打开）
+      if (
+        typeof renderPersonasView === "function" &&
+        $("#cfm-overlay").length > 0
+      ) {
+        try {
+          renderPersonasView();
+        } catch (e) {}
+      }
+    });
+    body.append(section);
+  }
+
   // ==================== 共享：移动端全屏模式设置 ====================
   function renderMobileFullscreenSection(body) {
     const currentMode =
@@ -37300,6 +37431,8 @@ jQuery(async () => {
     renderMobileFullscreenSection(settingsBody);
     // 0.67 界面语言切换
     renderLanguageSwitchSection(settingsBody);
+    // 0.69 合并同名 User（布局页最上方）
+    renderMergeSameNameUserSection(layoutBody);
     // 0.7 自定义布局（共享函数）
     renderCustomLayoutSection(layoutBody);
 
@@ -37674,6 +37807,8 @@ jQuery(async () => {
     renderMobileFullscreenSection(settingsBody);
     // 0.67 界面语言切换
     renderLanguageSwitchSection(settingsBody);
+    // 0.69 合并同名 User（布局页最上方）
+    renderMergeSameNameUserSection(layoutBody);
     // 0.7 自定义布局（共享函数）
     renderCustomLayoutSection(layoutBody);
 
@@ -38152,6 +38287,7 @@ jQuery(async () => {
     renderEntryTransferPostActionSection(settingsBody);
     renderMobileTopbarAvoidSection(settingsBody);
     renderLanguageSwitchSection(settingsBody);
+    renderMergeSameNameUserSection(layoutBody);
     renderCustomLayoutSection(layoutBody);
 
     // 1. 创建新文件夹
@@ -44123,7 +44259,10 @@ jQuery(async () => {
           const dn = (folderTree[fid].displayName || fid).toLowerCase();
           return dn.includes(searchTerm);
         });
-        childFolders = (searchScope === "all" ? matchedFolderIds : childFolders.filter((fid) => matchedFolderIds.includes(fid)));
+        childFolders =
+          searchScope === "all"
+            ? matchedFolderIds
+            : childFolders.filter((fid) => matchedFolderIds.includes(fid));
         displayChats = [];
       } else {
         // 搜索聊天记录
@@ -44136,9 +44275,10 @@ jQuery(async () => {
         });
         childFolders = [];
       }
-      displayTitle = searchScope === "all"
-        ? `全部 (搜索: ${searchTerm})`
-        : `${displayTitle} (搜索: ${searchTerm})`;
+      displayTitle =
+        searchScope === "all"
+          ? `全部 (搜索: ${searchTerm})`
+          : `${displayTitle} (搜索: ${searchTerm})`;
     }
 
     const totalItems = childFolders.length + displayChats.length;
@@ -44200,7 +44340,10 @@ jQuery(async () => {
         const note = cfmChatNotes[fn.replace(/\.jsonl$/i, "")] || "";
         // 匹配当前聊天：统一去掉 .jsonl 后缀再比较，且只在当前角色卡下高亮
         const fnNoExt = fn.replace(/\.jsonl$/i, "");
-        const isCur = isCurrentChar && curChatId && (fn === curChatId || fnNoExt === curChatId);
+        const isCur =
+          isCurrentChar &&
+          curChatId &&
+          (fn === curChatId || fnNoExt === curChatId);
         const isDelSel = cfmResDeleteMode && cfmResDeleteSelected.has(fn);
         const isExpSel = cfmExportMode && cfmExportSelected.has(fn);
         const isMSel = cfmMultiSelectMode && cfmMultiSelected.has(fn);
@@ -44346,7 +44489,6 @@ jQuery(async () => {
         );
         renderChatlogsView();
       });
-
   }
 
   // ==================== 快速回复视图渲染（双栏 + 树形嵌套） ====================
@@ -49697,8 +49839,106 @@ jQuery(async () => {
         }));
         newRightList.append(row);
       }
-      // User行（带头像 + 星标 + 多选支持 + 备注）
-      for (const p of displayItems) {
+
+      // ===== 合并同名 User：将同名的合并为“叠堆”分组 =====
+      const mergeEnabled =
+        !!extension_settings[extensionName].mergeSameNameUser &&
+        !cfmMultiSelectMode &&
+        !cfmExportMode &&
+        !cfmResDeleteMode &&
+        !cfmPersonaNoteMode;
+      if (!extension_settings[extensionName].personaStackExpanded) {
+        extension_settings[extensionName].personaStackExpanded = {};
+      }
+      const stackExpandedMap =
+        extension_settings[extensionName].personaStackExpanded;
+      const renderQueue = [];
+      if (mergeEnabled) {
+        const nameMap = new Map();
+        for (const p of displayItems) {
+          const key = String(p.name || "").trim().toLowerCase();
+          if (!key) {
+            renderQueue.push({ kind: "single", persona: p });
+            continue;
+          }
+          if (!nameMap.has(key)) nameMap.set(key, []);
+          nameMap.get(key).push(p);
+        }
+        // 保留 displayItems 原顺序：用首次出现的位置作为 anchor
+        const visited = new Set();
+        for (const p of displayItems) {
+          const key = String(p.name || "").trim().toLowerCase();
+          if (!key) continue;
+          if (visited.has(key)) continue;
+          visited.add(key);
+          const group = nameMap.get(key);
+          if (group.length === 1) {
+            renderQueue.push({ kind: "single", persona: group[0] });
+          } else {
+            renderQueue.push({ kind: "stack", name: p.name, group });
+          }
+        }
+      } else {
+        for (const p of displayItems) {
+          renderQueue.push({ kind: "single", persona: p });
+        }
+      }
+
+      // 渲染叠堆行的辅助函数
+      function renderPersonaStackRow(stackName, group) {
+        const stackKey = String(stackName || "").trim().toLowerCase();
+        const isExpanded = !!stackExpandedMap[stackKey];
+        const activeInGroup = group.some(
+          (g) => g.avatarId === currentUserAvatar,
+        );
+        const favInGroup = group.some((g) =>
+          isResFavorite("personas", g.avatarId),
+        );
+        const maxStack = Math.min(group.length, 3);
+        let stackImgsHtml = "";
+        for (let i = maxStack - 1; i >= 0; i--) {
+          const url = getThumbnailUrl("persona", group[i].avatarId);
+          stackImgsHtml += `<img class="cfm-persona-stack-img cfm-persona-stack-img-${i}" src="${url}" alt="avatar" onerror="this.src='/img/ai4.png'">`;
+        }
+        const stackRow = $(`
+          <div class="cfm-row cfm-row-char cfm-persona-stack-row ${activeInGroup ? "cfm-rv-item-active" : ""} ${isExpanded ? "cfm-persona-stack-expanded" : ""}" data-stack-name="${escapeHtml(stackName)}">
+            <div class="cfm-row-icon cfm-persona-stack">
+              ${stackImgsHtml}
+              <span class="cfm-persona-stack-count">${group.length}</span>
+            </div>
+            <div class="cfm-row-name"><span class="cfm-char-name-inline cfm-persona-name-inline"><div class="cfm-char-detail-toggle cfm-persona-stack-toggle" title="展开/折叠同名User"><i class="fa-solid fa-caret-${isExpanded ? "down" : "right"}"></i></div><span class="cfm-persona-name-text">${escapeHtml(stackName)}</span><span class="cfm-persona-stack-badge" title="共 ${group.length} 个同名User">×${group.length}</span></span></div>
+            <div class="cfm-row-star ${favInGroup ? "cfm-star-active" : ""}" title="组内含收藏"><i class="fa-${favInGroup ? "solid" : "regular"} fa-star"></i></div>
+          </div>
+        `);
+        stackRow.on("click", function (e) {
+          if ($(e.target).closest(".cfm-row-star").length) return;
+          stackExpandedMap[stackKey] = !stackExpandedMap[stackKey];
+          renderPersonasView();
+        });
+        newRightList.append(stackRow);
+        if (isExpanded) {
+          const sublist = $(
+            '<div class="cfm-persona-stack-sublist"></div>',
+          );
+          for (const sp of group) {
+            renderSinglePersonaRow(sp, sublist);
+          }
+          newRightList.append(sublist);
+        }
+      }
+
+      // 主循环：根据 renderQueue 渲染
+      for (const item of renderQueue) {
+        if (item.kind === "stack") {
+          renderPersonaStackRow(item.name, item.group);
+          continue;
+        }
+        renderSinglePersonaRow(item.persona, newRightList);
+      }
+
+      // 抽取的单条 User 行渲染函数（沿用原循环体逻辑）
+      function renderSinglePersonaRow(p, containerToUse) {
+        containerToUse = containerToUse || newRightList;
         const isActive = p.avatarId === currentUserAvatar;
         const bindStates = getPersonaBindStates(p);
         const isDefaultPersona = !!bindStates.default;
@@ -49851,7 +50091,7 @@ jQuery(async () => {
           };
           return getMultiDragData(singleData);
         });
-        newRightList.append(row);
+        containerToUse.append(row);
         if (personaItemExpandedIds.has(p.avatarId)) {
           renderPersonaDetailSubList(row, p);
         }

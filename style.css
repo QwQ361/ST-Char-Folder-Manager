@@ -3677,6 +3677,73 @@ input.cfm-rv-search {
   color: #89b4fa !important;
   background-color: rgba(137, 180, 250, 0.15);
 }
+/* 单行隐藏/显示角色卡眼睛按钮 */
+.cfm-row-hide-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  cursor: pointer;
+  color: var(--SmartThemeBodyColor, #cdd6f4);
+  opacity: 0.4;
+  transition:
+    opacity 0.15s,
+    color 0.15s,
+    background-color 0.15s;
+  flex-shrink: 0;
+  font-size: 12px;
+  border-radius: 3px;
+}
+.cfm-row-hide-btn:hover {
+  opacity: 1 !important;
+  color: #f9e2af !important;
+  background-color: rgba(249, 226, 175, 0.15);
+}
+.cfm-row-hide-btn.cfm-row-hide-active {
+  opacity: 0.85;
+  color: #f9e2af;
+}
+.cfm-row-hide-btn.cfm-row-hide-active:hover {
+  color: #fab387 !important;
+  background-color: rgba(250, 179, 135, 0.15);
+}
+/* 隐藏的角色卡（总开关开启时显示，灰一点） */
+.cfm-row.cfm-row-char-hidden {
+  opacity: 0.55;
+}
+.cfm-row.cfm-row-char-hidden:hover {
+  opacity: 0.85;
+}
+.cfm-row.cfm-row-char-hidden .cfm-row-icon img {
+  filter: grayscale(0.5);
+}
+/* 工具栏：显示隐藏角色卡总开关按钮（与导入按钮风格一致，透明底） */
+.cfm-show-hidden-btn {
+  background: none !important;
+  border: none !important;
+  color: var(--SmartThemeBodyColor, #cdd6f4) !important;
+  cursor: pointer !important;
+  font-size: 13px !important;
+  padding: 2px 6px !important;
+  border-radius: 3px !important;
+  opacity: 0.6 !important;
+  transition:
+    opacity 0.15s,
+    background-color 0.15s !important;
+  flex-shrink: 0;
+}
+.cfm-show-hidden-btn:hover {
+  opacity: 1 !important;
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #f9e2af !important;
+}
+.cfm-show-hidden-btn.cfm-show-hidden-active {
+  opacity: 1 !important;
+  color: #f9e2af !important;
+  background-color: rgba(249, 226, 175, 0.15) !important;
+}
 .cfm-row-rename-btn {
   display: flex;
   align-items: center;
@@ -4975,6 +5042,99 @@ option.cfm-nf-hidden {
   }
   .cfm-persona-desc {
     max-width: 120px;
+  }
+}
+
+/* ========== 同名 User 合并叠堆样式 ========== */
+.cfm-persona-stack-row {
+  cursor: pointer;
+}
+.cfm-persona-stack-row .cfm-row-icon.cfm-persona-stack {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+.cfm-persona-stack-img {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1.6px solid var(--SmartThemeBlurTintColor, #1e1e2e);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  background: var(--SmartThemeBlurTintColor, #1e1e2e);
+}
+.cfm-persona-stack-img-0 {
+  top: 0;
+  left: 0;
+  z-index: 3;
+}
+.cfm-persona-stack-img-1 {
+  top: 4px;
+  left: 4px;
+  z-index: 2;
+  opacity: 0.85;
+}
+.cfm-persona-stack-img-2 {
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  opacity: 0.65;
+}
+.cfm-persona-stack-count {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  z-index: 4;
+  background: rgba(137, 180, 250, 0.95);
+  color: #1e1e2e;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+.cfm-persona-stack-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  font-weight: 600;
+  line-height: 1.4;
+  background: rgba(137, 180, 250, 0.18);
+  color: #89b4fa;
+}
+.cfm-persona-stack-sublist {
+  margin-left: 18px;
+  border-left: 2px solid rgba(137, 180, 250, 0.25);
+  padding-left: 4px;
+}
+.cfm-persona-stack-sublist .cfm-row {
+  background: rgba(137, 180, 250, 0.04);
+}
+@media (max-width: 768px) {
+  .cfm-persona-stack-row .cfm-row-icon.cfm-persona-stack {
+    width: 50px;
+    height: 50px;
+  }
+  .cfm-persona-stack-img {
+    width: 40px;
+    height: 40px;
+  }
+  .cfm-persona-stack-img-1 {
+    top: 5px;
+    left: 5px;
+  }
+  .cfm-persona-stack-img-2 {
+    top: 10px;
+    left: 10px;
   }
 }
 
